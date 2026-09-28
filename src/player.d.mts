@@ -1,0 +1,33 @@
+import type { Episode, SaveProgress, StreamVariant, Translator } from './types';
+type SaveState = { status: 'idle' | 'pending' | 'synced' | 'failed'; count: number; error?: unknown };
+declare const player: {
+  selectTranslator(choices: Translator[], preferred?: string, remote?: string, siteSelected?: string): string;
+  videoRectangle(sourceWidth: number, sourceHeight: number, viewWidth: number, viewHeight: number, fit?: 'contain' | 'cover'): { left: number; top: number; width: number; height: number };
+  qualityPreference(variant: StreamVariant): string;
+  qualityOrder(a: StreamVariant, b: StreamVariant): number;
+  findVariant(variants: StreamVariant[], preference: string): StreamVariant | null;
+  selectVariant(variants: StreamVariant[], preference?: string): StreamVariant | null;
+  createSeekState(start?: number): { position(): number; pending(): boolean; reset(position?: number): void; hold(active: boolean): void; request(target: number): number | null; observe(position: number, seeking?: boolean, settled?: boolean): number | null };
+  seekPosition(position: number, duration: number, direction: number, heldMs?: number): number;
+  nextEpisode(episodes: Episode[], season?: number, episode?: number): Episode | null;
+  previousEpisode(episodes: Episode[], season?: number, episode?: number): Episode | null;
+  createProgressQueue(write: (value: SaveProgress) => Promise<unknown>, changed?: (state: SaveState) => void): {
+    enqueue(value: SaveProgress): void;
+    pending(): SaveProgress[];
+    idle(): Promise<void>;
+    retry(): Promise<void>;
+    restore(values: SaveProgress[]): void;
+    clear(): void;
+  };
+};
+export const videoRectangle: typeof player.videoRectangle;
+export const qualityPreference: typeof player.qualityPreference;
+export const qualityOrder: typeof player.qualityOrder;
+export const findVariant: typeof player.findVariant;
+export const selectVariant: typeof player.selectVariant;
+export const selectTranslator: typeof player.selectTranslator;
+export const createSeekState: typeof player.createSeekState;
+export const seekPosition: typeof player.seekPosition;
+export const nextEpisode: typeof player.nextEpisode;
+export const previousEpisode: typeof player.previousEpisode;
+export const createProgressQueue: typeof player.createProgressQueue;

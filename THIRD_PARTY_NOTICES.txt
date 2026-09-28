@@ -1,0 +1,18 @@
+Third-party notices
+
+HDRezka request and stream formats were studied with the unofficial
+ndenissov/HDRezka project (MIT): https://github.com/ndenissov/HDRezka
+Its license is retained in webos/licenses/hdrezka-reference.txt.
+
+The observed anti-bot proof-of-work protocol was checked against Anubis:
+https://github.com/TecharoHQ/anubis
+No Anubis server or media is bundled with this project.
+
+The web application uses Vue (MIT). The relevant license notices are retained
+in webos/licenses/. Runtime service dependencies retain their upstream license
+files inside node_modules when the IPK is packaged.
+The ISC notice for boolbase is retained separately in
+webos/licenses/boolbase.txt because its npm archive omits a license file.
+
+This repository and its release packages contain no HDRezka video, audio,
+subtitle, poster, account, cookie, or session data.

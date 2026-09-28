@@ -1,0 +1,9 @@
+{
+  "id": "io.github.tmichaelan.app.rezkaclient.service",
+  "description": "Rezka Client private network session",
+  "services": [{
+    "name": "io.github.tmichaelan.app.rezkaclient.service",
+    "description": "Rezka Client service",
+    "commands": [{ "name": "rpc", "description": "App-private RPC endpoint", "public": false }]
+  }]
+}

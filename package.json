@@ -1,0 +1,28 @@
+{
+  "name": "webos-rezka-client",
+  "version": "0.1.12",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "build": "vue-tsc --noEmit && vite build && node scripts/postbuild.mjs",
+    "test": "node --test tests/*.test.cjs tests/*.test.mjs",
+    "test:e2e": "playwright test",
+    "package:ipk": "npm run build && node scripts/package.mjs",
+    "start:service": "node scripts/dev-service.cjs"
+  },
+  "dependencies": {
+    "vue": "3.5.43"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "@vitejs/plugin-vue": "6.0.9",
+    "typescript": "5.9.3",
+    "vite": "8.3.1",
+    "vue-tsc": "3.3.11"
+  },
+  "engines": {
+    "node": ">=20.19.0"
+  }
+}

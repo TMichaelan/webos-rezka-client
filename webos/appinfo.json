@@ -1,0 +1,18 @@
+{
+  "id": "io.github.tmichaelan.app.rezkaclient",
+  "version": "0.1.12",
+  "vendor": "Rezka Client contributors",
+  "type": "web",
+  "main": "index.html",
+  "title": "Rezka Client",
+  "icon": "icon.png",
+  "largeIcon": "large-icon.png",
+  "splashBackground": "splash-background.png",
+  "iconColor": "#101116",
+  "appDescription": "Неофициальный клиент HDRezka для webOS TV",
+  "resolution": "1920x1080",
+  "requiredMemory": 64,
+  "requiredACG": [],
+  "inspectable": false,
+  "disableBackHistoryAPI": true
+}

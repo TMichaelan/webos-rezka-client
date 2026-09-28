@@ -1,0 +1,15 @@
+{
+  "name": "io.github.tmichaelan.app.rezkaclient.service",
+  "version": "0.1.12",
+  "private": true,
+  "license": "MIT",
+  "main": "service.js",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=16"
+  },
+  "dependencies": {
+    "tough-cookie": "4.1.4",
+    "node-html-parser": "6.1.13"
+  }
+}
