@@ -52,7 +52,7 @@
 Через CLI:
 
 ```sh
-ares-install --device <DEVICE_NAME> io.github.tmichaelan.app.rezkaclient_0.1.15_all.ipk
+ares-install --device <DEVICE_NAME> io.github.tmichaelan.app.rezkaclient_0.1.16_all.ipk
 ares-launch --device <DEVICE_NAME> io.github.tmichaelan.app.rezkaclient
 ```
 

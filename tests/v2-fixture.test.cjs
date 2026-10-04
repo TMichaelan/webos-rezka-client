@@ -19,4 +19,8 @@ test('fixture exposes the V2 detail, person, schedule and trailer flows', async 
 
   const trailer = await provider.dispatch('trailer', { id: details.id, url: details.url });
   assert.match(trailer.url, /^https:\/\/www\.youtube\.com\/embed\/[\w-]{11}/);
+
+  assert.deepEqual(await provider.dispatch('partRatings', { parts: [{ id: '400', url: 'https://hdrezka-home.tv/series/400-test.html' }] }), {
+    ratings: [{ id: '400', score: '7.5', votes: '123' }],
+  });
 });

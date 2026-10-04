@@ -164,6 +164,25 @@ function parseRating(node, scoreSelector, source) {
   const votes = (rest.match(/\((\d[\d ]*)\)/) || rest.match(/^(\d[\d ]*)(?=\s*(?:оценок|голосов|votes?|$))/i))?.[1]?.trim();
   return { source, score, ...(votes ? { votes } : {}) };
 }
+function parseQuickRating(html, expectedUrl, mirror) {
+  const root = document(html);
+  const bubbles = root.querySelectorAll('.b-content__bubble');
+  if (bubbles.length > 1) throw fail('UNSUPPORTED_PROTOCOL', 'Сервер вернул неоднозначный рейтинг фильма.');
+  const scope = bubbles[0] || root;
+  const links = scope.querySelectorAll('.b-content__bubble_title a');
+  const ratings = scope.querySelectorAll('.b-content__bubble_rating');
+  if (links.length !== 1 || ratings.length !== 1 || ratings[0].querySelectorAll('b').length !== 1) throw fail('UNSUPPORTED_PROTOCOL', 'Сервер вернул неполный рейтинг фильма.');
+  let linkedUrl;
+  try { linkedUrl = contentUrl(attr(links[0], 'href'), mirror, true); }
+  catch { throw fail('UNSUPPORTED_PROTOCOL', 'Сервер вернул рейтинг другого фильма.'); }
+  if (linkedUrl !== contentUrl(expectedUrl, mirror)) throw fail('UNSUPPORTED_PROTOCOL', 'Сервер вернул рейтинг другого фильма.');
+  const rating = ratings[0];
+  const score = clean(rating?.querySelector('b'));
+  const value = Number(score.replace(',', '.'));
+  if (!/^\d+(?:[.,]\d+)?$/.test(score) || !Number.isFinite(value) || value < 0 || value > 10) throw fail('UNSUPPORTED_PROTOCOL', 'Сервер предоставил некорректный рейтинг фильма.');
+  const votes = clean(rating).replace(score, '').match(/\((\d[\d ]*)\)/)?.[1]?.trim();
+  return { score, ...(votes ? { votes } : {}) };
+}
 function optionalSiteUrl(value, mirror) {
   if (typeof value !== 'string' || !value.trim()) return;
   try {
@@ -413,7 +432,7 @@ function parseContinue(html, mirror) {
     return { id, url, title: clean(link), poster: mediaUrl(attr(link, 'data-cover_url'), mirror), meta: meta || undefined, type, ...(status ? { status } : {}), progress: { id, url, position: null, completed: node.classList.contains('watched-row'), ...(selection ? { translatorId: selection[1], season: Number(selection[2]), episode: Number(selection[3]) } : episode ? { season: Number(episode[1]), episode: Number(episode[2]) } : {}), ...(numeric(saveId) ? { saveId } : {}) } };
   });
 }
-module.exports = { fail, document, siteDocument, contentUrl, personUrl, parseAccount, parseAccountName, parsePage, parseDetails, parsePerson, parseTrailer, parseEpisodes, parseWatched, applyWatched, translatorSelection, parseStreams, subtitleText, parseBookmarkLists, parseContinue };
+module.exports = { fail, document, siteDocument, contentUrl, personUrl, parseAccount, parseAccountName, parsePage, parseDetails, parsePerson, parseQuickRating, parseTrailer, parseEpisodes, parseWatched, applyWatched, translatorSelection, parseStreams, subtitleText, parseBookmarkLists, parseContinue };
 
 /*
 MIT License — ndenissov/HDRezka

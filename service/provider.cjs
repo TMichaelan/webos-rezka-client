@@ -101,6 +101,20 @@ function createProvider({ transport, progressFile, lookup = dnsLookup }) {
   let verifiedContext = null;
   let confirmedEpisode = null;
   const localProgress = progressFile ? createProgressStore(progressFile) : null;
+  let quickRatingActive = 0;
+  const quickRatingQueue = [];
+  function withQuickRatingSlot(work) {
+    return new Promise((resolve, reject) => {
+      const run = async () => {
+        quickRatingActive++;
+        try { resolve(await work()); }
+        catch (error) { reject(error); }
+        finally { quickRatingActive--; quickRatingQueue.shift()?.(); }
+      };
+      if (quickRatingActive < 3) run();
+      else quickRatingQueue.push(run);
+    });
+  }
   const invalidateSession = () => { sessionEpoch++; subtitleURLs.clear(); verifiedAccount = null; verifiedContext = null; confirmedEpisode = null; };
   const sessionContext = () => ({ epoch: sessionEpoch, generation: transport.generation, mirror: transport.mirror });
   const isCurrentSession = context => context && context.epoch === sessionEpoch && context.generation === transport.generation && context.mirror === transport.mirror;
@@ -268,6 +282,37 @@ function createProvider({ transport, progressFile, lookup = dnsLookup }) {
       case 'person': {
         const url = p.personUrl(params.url, transport.mirror);
         return p.parsePerson(await request(new URL(url).pathname), url, transport.mirror);
+      }
+      case 'partRatings': {
+        const context = sessionContext();
+        if (!Array.isArray(params.parts) || params.parts.length < 1 || params.parts.length > 20) throw p.fail('INVALID_INPUT', 'Выберите от 1 до 20 частей франшизы.');
+        const validated = params.parts.map(part => {
+          if (!part || typeof part !== 'object' || Array.isArray(part)) throw p.fail('INVALID_INPUT', 'Некорректная часть франшизы.');
+          const postId = id(part.id);
+          const url = p.contentUrl(part.url, transport.mirror);
+          if (new URL(url).pathname.match(/\/(\d+)-[^/]+\.html$/)?.[1] !== postId) throw p.fail('INVALID_INPUT', 'Фильм не соответствует ссылке.');
+          return { id: postId, url };
+        });
+        const seen = new Set();
+        const parts = validated.filter(part => {
+          if (seen.has(part.id)) return false;
+          seen.add(part.id);
+          return true;
+        });
+        const ratings = [];
+        for (let index = 0; index < parts.length; index += 3) {
+          ratings.push(...await Promise.all(parts.slice(index, index + 3).map(part => withQuickRatingSlot(async () => {
+            checkSession(context);
+            const html = await request('/engine/ajax/quick_content.php', {
+              method: 'POST',
+              form: { id: part.id, is_touch: '1' },
+              headers: { 'X-Requested-With': 'XMLHttpRequest', Referer: part.url },
+            });
+            checkSession(context);
+            return { id: part.id, ...p.parseQuickRating(html, part.url, transport.mirror) };
+          }))));
+        }
+        return { ratings };
       }
       case 'trailer': {
         const postId = id(params.id);

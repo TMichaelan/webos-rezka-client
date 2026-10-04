@@ -61,6 +61,10 @@ function createFixtureProvider() {
         if (!value) throw Object.assign(new Error('Unknown fixture person'), { code: 'INVALID_INPUT' });
         return value;
       }
+      case 'partRatings': {
+        const values = { '100': { score: '8.2', votes: '456' }, '200': { score: '8.0', votes: '301' }, '300': { score: '7.1', votes: '88' }, '400': { score: '7.5', votes: '123' } };
+        return { ratings: params.parts.flatMap(part => items.some(item => item.id === part.id && item.url === part.url) && values[part.id] ? [{ id: part.id, ...values[part.id] }] : []) };
+      }
       case 'trailer': {
         const item = items.find(item => item.id === params.id && item.url === params.url);
         if (!item || !extras[item.id]?.trailerAvailable) throw Object.assign(new Error('Unknown fixture trailer'), { code: 'INVALID_INPUT' });

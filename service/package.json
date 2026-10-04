@@ -1,6 +1,6 @@
 {
   "name": "io.github.tmichaelan.app.rezkaclient.service",
-  "version": "0.1.15",
+  "version": "0.1.16",
   "private": true,
   "license": "MIT",
   "main": "service.js",

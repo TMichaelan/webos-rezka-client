@@ -7,6 +7,7 @@ const {
   parseWatched,
   personUrl,
   parsePerson,
+  parseQuickRating,
   parseTrailer,
 } = require('../service/parsers.cjs');
 
@@ -35,6 +36,54 @@ function card(id, title = `Title ${id}`, path = `/series/drama/${id}-title-${id}
     <div class="b-content__inline_item-link"><a href="${path}">${title}</a><div>2025, Drama</div></div>
   </div>`;
 }
+
+function quickRating(url, score, votes) {
+  return `<div class="b-content__bubble">
+    <div class="b-content__bubble_title"><a href="${url}">Title</a></div>
+    <div class="b-content__bubble_rating">Рейтинг фильма: <b>${score}</b>${votes ? ` (${votes})` : ''}</div>
+  </div>`;
+}
+
+test('quick rating parses validated film and series fragments', () => {
+  const filmUrl = `${mirror}/films/action/757-gladiator-2000.html`;
+  const seriesUrl = `${mirror}/series/horror/76-hodyachie-mertvecy-2010-latest.html`;
+
+  assert.deepEqual(parseQuickRating(quickRating('/films/action/757-gladiator-2000.html', '6.56', '6 050'), filmUrl, mirror), {
+    score: '6.56',
+    votes: '6 050',
+  });
+  assert.deepEqual(parseQuickRating(quickRating(seriesUrl, '8.2'), seriesUrl, mirror), { score: '8.2' });
+  const liveFragment = `<div class="b-content__catlabel films"></div>
+    <div class="b-content__bubble_title"><a href="${filmUrl}">Gladiator</a></div>
+    <div class="b-content__bubble_rating"><span>Рейтинг фильма:</span> <b>9.46</b> (10 937)</div>`;
+  assert.deepEqual(parseQuickRating(liveFragment, filmUrl, mirror), { score: '9.46', votes: '10 937' });
+});
+
+test('quick rating rejects mismatched content links and malformed scores', () => {
+  const expectedUrl = `${mirror}/films/action/757-gladiator-2000.html`;
+  assert.throws(
+    () => parseQuickRating(quickRating('/films/action/758-wrong.html', '6.56', '6 050'), expectedUrl, mirror),
+    error => error?.code === 'UNSUPPORTED_PROTOCOL',
+  );
+  for (const score of ['', '-1', '10.01', 'Infinity', '6.5 stars']) {
+    assert.throws(
+      () => parseQuickRating(quickRating('/films/action/757-gladiator-2000.html', score), expectedUrl, mirror),
+      error => error?.code === 'UNSUPPORTED_PROTOCOL',
+    );
+  }
+});
+
+test('quick rating never combines a title link and score from separate bubbles', () => {
+  const expectedUrl = `${mirror}/films/action/757-gladiator-2000.html`;
+  const html = `<div class="b-content__bubble">
+    <div class="b-content__bubble_title"><a href="${expectedUrl}">Expected title</a></div>
+  </div>
+  <div class="b-content__bubble">
+    <div class="b-content__bubble_rating">Рейтинг другого фильма: <b>9.9</b> (1)</div>
+  </div>`;
+
+  assert.throws(() => parseQuickRating(html, expectedUrl, mirror), error => error?.code === 'UNSUPPORTED_PROTOCOL');
+});
 
 test('details expose validated people, schedule, franchise, rankings, and trailer availability', () => {
   const html = details(`

@@ -1,6 +1,6 @@
 'use strict';
 
-const METHODS = new Set(['status', 'configure', 'login', 'logout', 'catalog', 'search', 'details', 'person', 'trailer', 'streams', 'subtitle', 'bookmarkLists', 'bookmarks', 'setBookmark', 'setEpisodeWatched', 'continueWatching', 'progress', 'saveProgress']);
+const METHODS = new Set(['status', 'configure', 'login', 'logout', 'catalog', 'search', 'details', 'person', 'partRatings', 'trailer', 'streams', 'subtitle', 'bookmarkLists', 'bookmarks', 'setBookmark', 'setEpisodeWatched', 'continueWatching', 'progress', 'saveProgress']);
 const MESSAGES = {
   INVALID_INPUT: 'Проверьте введённые данные.',
   AUTH_REQUIRED: 'Войдите в аккаунт HDRezka.',

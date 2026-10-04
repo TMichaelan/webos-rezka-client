@@ -13,7 +13,7 @@ import type { BookmarkList, Content, ContinueItem, Details, Episode, Methods, Pa
 
 type Route = { name: 'home' | 'search' | 'catalog' | 'details' | 'person' | 'bookmarks' | 'profile'; title: string; category?: string; url?: string };
 type Shelf = { id: 'continue' | 'bookmarks' | 'new' | 'popular'; title: string; subtitle: string; items: (Content | ContinueItem)[]; loading: boolean; error: string };
-type RouteSnapshot = { focus: string; scroll: number; rows: number[]; detail?: { summary?: Content; season: number; episode?: number; scheduleSeason?: number; scheduleExpanded: boolean } };
+type RouteSnapshot = { focus: string; scroll: number; rows: number[]; detail?: { summary?: Content; season: number; episode?: number; scheduleSeason?: number; scheduleExpanded: boolean; partsExpanded: boolean } };
 const route = ref<Route>({ name: 'home', title: 'Главная' });
 const history: Route[] = [];
 const routeKey = (value: Route, listId = selectedList.value) => `${value.name}:${value.name === 'bookmarks' ? listId : value.category || value.url || ''}`;
@@ -73,7 +73,7 @@ const detailPeople = computed(() => {
     if (existing) { if (!existing.roles.includes(role)) existing.roles.push(role); }
     else people.set(key, { ...item, roles: [role] });
   });
-  add(details.value?.directors, 'Режиссёр'); add(details.value?.actors, 'Актёр');
+  add(details.value?.actors, 'Актёр'); add(details.value?.directors, 'Режиссёр');
   return [...people.values()].map(item => ({ ...item, role: item.roles.join(' · ') }));
 });
 const detailFacts = computed(() => {
@@ -101,6 +101,9 @@ const selectedSeason = ref(1);
 const selectedEpisode = ref<number | undefined>();
 const selectedScheduleSeason = ref<number>();
 const scheduleExpanded = ref(false);
+const partsExpanded = ref(false);
+const partRatingPending = reactive(new Set<string>());
+const partRatingAttempted = reactive(new Set<string>());
 let requestedContinue: ContinueItem['progress'] | undefined;
 const seasons = computed(() => [...new Set(details.value?.episodes.map(item => item.season) || [])]);
 const episodes = computed(() => details.value?.episodes.filter(item => item.season === selectedSeason.value) || []);
@@ -113,6 +116,10 @@ const orderedScheduleEpisodes = computed(() => {
   return upcoming.length ? [...upcoming, ...aired] : aired;
 });
 const visibleScheduleEpisodes = computed(() => scheduleExpanded.value ? orderedScheduleEpisodes.value : orderedScheduleEpisodes.value.slice(0, 3));
+const visibleFranchiseParts = computed(() => {
+  const parts = details.value?.parts || [];
+  return partsExpanded.value ? parts : parts.slice(0, 3);
+});
 const preparedSource = ref<PlaybackSource>();
 const playbackSource = ref<PlaybackSource>();
 const sourceError = ref('');
@@ -266,7 +273,8 @@ async function applyStatus(value: Status) {
     cache.clear(); snapshots.clear(); history.length = 0;
     if (publicOrigin) history.push(publicOrigin);
     cards.value = []; lists.value = []; selectedList.value = ''; details.value = undefined; person.value = undefined; detailSummary.value = undefined; requestedContinue = undefined;
-    translator.value = ''; selectedSeason.value = 1; selectedEpisode.value = undefined; selectedScheduleSeason.value = undefined; scheduleExpanded.value = false;
+    translator.value = ''; selectedSeason.value = 1; selectedEpisode.value = undefined; selectedScheduleSeason.value = undefined; scheduleExpanded.value = false; partsExpanded.value = false;
+    partRatingPending.clear(); partRatingAttempted.clear();
     query.value = ''; searchedQuery.value = ''; page.value = 1; hasMore.value = false; loadMoreFailed.value = false;
     loading.value = false; screenError.value = ''; listsError.value = ''; detailBookmarked.value = undefined; confirmedBookmarks.clear(); bookmarksComplete.value = false;
     watchedPending.clear(); watchedDesired.clear(); watchedFailures.clear(); watchedNote.value = '';
@@ -323,7 +331,7 @@ function capture() {
   snapshots.set(routeKey(route.value), {
     focus: (document.activeElement as HTMLElement)?.dataset.navId || '', scroll: scroller.value?.scrollTop || 0,
     rows: [...(scroller.value?.querySelectorAll<HTMLElement>('.poster-row') || [])].map(row => row.scrollLeft),
-    ...(route.value.name === 'details' ? { detail: { summary: detailSummary.value ? { ...detailSummary.value } : undefined, season: selectedSeason.value, episode: selectedEpisode.value, scheduleSeason: selectedScheduleSeason.value, scheduleExpanded: scheduleExpanded.value } } : {}),
+    ...(route.value.name === 'details' ? { detail: { summary: detailSummary.value ? { ...detailSummary.value } : undefined, season: selectedSeason.value, episode: selectedEpisode.value, scheduleSeason: selectedScheduleSeason.value, scheduleExpanded: scheduleExpanded.value, partsExpanded: partsExpanded.value } } : {}),
   });
 }
 async function restoreFocus() {
@@ -368,7 +376,7 @@ async function loadRoute(restoreAtStart = false) {
     const saved = restoreAtStart ? snapshots.get(routeKey(route.value))?.detail : undefined;
     if (saved) {
       detailSummary.value = saved.summary ? { ...saved.summary } : undefined;
-      selectedSeason.value = saved.season; selectedEpisode.value = saved.episode; selectedScheduleSeason.value = saved.scheduleSeason; scheduleExpanded.value = saved.scheduleExpanded;
+      selectedSeason.value = saved.season; selectedEpisode.value = saved.episode; selectedScheduleSeason.value = saved.scheduleSeason; scheduleExpanded.value = saved.scheduleExpanded; partsExpanded.value = saved.partsExpanded;
     }
     if (restoreAtStart) restoredTarget = await restoreFocus();
     await loadDetails(version, undefined, !!saved);
@@ -523,6 +531,7 @@ async function openContent(item: Content | ContinueItem) {
   details.value = undefined;
   selectedScheduleSeason.value = undefined;
   scheduleExpanded.value = false;
+  partsExpanded.value = false; partRatingPending.clear(); partRatingAttempted.clear();
   descriptionExpanded.value = false;
   await navigate({ name: 'details', title: item.title, url: item.url }, true, true);
 }
@@ -531,6 +540,14 @@ async function loadDetails(version = requestVersion, requestedTranslator?: strin
   try {
     const value = await api.call('details', { url: route.value.url!, translatorId: requestedTranslator }, { signal: screenController.signal });
     if (version !== requestVersion) return;
+    const existingRatings = new Map((details.value?.url === value.url ? details.value.parts : [])?.map(item => [item.id, { score: item.rezkaRating, votes: item.rezkaVotes }]) || []);
+    value.parts?.forEach(item => {
+      const existing = existingRatings.get(item.id);
+      if (existing?.score) { item.rezkaRating = existing.score; item.rezkaVotes = existing.votes; }
+    });
+    const ownRating = value.ratings?.find(item => item.source === 'HDRezka');
+    const currentPart = value.parts?.find(item => item.current);
+    if (currentPart && ownRating) { currentPart.rezkaRating = ownRating.score; currentPart.rezkaVotes = ownRating.votes; }
     details.value = value;
     const desired = requestedTranslator || selectTranslator(value.translators, preferences.translatorId, requestedContinue?.translatorId || requestedContinue?.providerTranslatorId, value.selectedTranslatorId);
     translator.value = value.translators.find(item => item.id === desired)?.id || value.selectedTranslatorId || value.translators[0]?.id || '';
@@ -542,6 +559,46 @@ async function loadDetails(version = requestVersion, requestedTranslator?: strin
   } catch (error) { if (version === requestVersion && !screenController.signal.aborted) screenError.value = message(error); }
   finally { if (version === requestVersion) loading.value = false; }
 }
+async function loadPartRatings(parts = visibleFranchiseParts.value) {
+  const owner = details.value?.url;
+  if (!owner || route.value.name !== 'details') return;
+  const signal = screenController.signal;
+  const targets = parts.filter(item => !item.rezkaRating && !partRatingAttempted.has(item.id));
+  if (!targets.length) return;
+  targets.forEach(item => { partRatingAttempted.add(item.id); partRatingPending.add(item.id); });
+  try {
+    for (let index = 0; index < targets.length; index += 20) {
+      const chunk = targets.slice(index, index + 20);
+      const unresolved = targets.slice(index);
+      try {
+        const result = await api.call('partRatings', { parts: chunk.map(item => ({ id: item.id, url: item.url })) }, { signal });
+        if (details.value?.url !== owner || route.value.name !== 'details') { unresolved.forEach(item => partRatingAttempted.delete(item.id)); return; }
+        result.ratings.forEach(rating => {
+          const item = details.value?.parts?.find(part => part.id === rating.id);
+          if (item) { item.rezkaRating = rating.score; item.rezkaVotes = rating.votes; }
+        });
+      } catch {
+        if (signal.aborted || details.value?.url !== owner || route.value.name !== 'details') { unresolved.forEach(item => partRatingAttempted.delete(item.id)); return; }
+      }
+    }
+  } finally { targets.forEach(item => partRatingPending.delete(item.id)); }
+}
+function partRatingText(item: NonNullable<Details['parts']>[number]) {
+  if (item.rezkaRating) return item.rezkaRating;
+  return partRatingPending.has(item.id) || !partRatingAttempted.has(item.id) ? '…' : '—';
+}
+function partYear(item: NonNullable<Details['parts']>[number]) { return item.year ? /год/i.test(item.year) ? item.year : `${item.year} год` : 'Год не указан'; }
+async function toggleFranchiseParts(event: MouseEvent) {
+  const toggle = event.currentTarget as HTMLButtonElement;
+  const visible = visibleFranchiseParts.value.length;
+  partsExpanded.value = !partsExpanded.value;
+  await nextTick();
+  const rows = [...toggle.closest('.detail-parts')!.querySelectorAll<HTMLButtonElement>('.franchise-row')];
+  const target = partsExpanded.value ? rows.slice(visible).find(row => !row.disabled) || toggle : toggle;
+  target.focus({ preventScroll: true });
+  target.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+}
+watch([() => route.value.name, () => details.value, () => partsExpanded.value], ([name, value]) => { if (name === 'details' && value) void loadPartRatings(); }, { flush: 'post' });
 async function setEpisodeWatched(change: WatchedChange) {
   const key = watchedKey(change);
   if (!status.value?.account || !status.value.capabilities.watched) return;
@@ -789,9 +846,10 @@ onBeforeUnmount(() => {
           </section>
           <section v-if="details.parts?.length" class="shelf detail-parts" role="region" :aria-label="details.franchiseTitle || 'Все части'">
             <div class="section-heading"><h2>{{ details.franchiseTitle || 'Все части' }}</h2></div>
-            <div class="poster-row part-row"><button v-for="item in details.parts" :key="`${item.id}:${item.order}`" class="poster-card part-card" :class="{ current: item.current }" :data-nav-id="item.current ? undefined : `part-${item.id}`" :disabled="item.current" :aria-label="`${item.order}. ${item.title}${item.year ? `, ${item.year}` : ''}${item.rating ? `, рейтинг ${item.rating}` : ''}${item.current ? ', текущая часть' : ''}`" @click="openContent(item)"><span class="part-order">{{ String(item.order).padStart(2, '0') }}</span><span class="part-copy"><strong>{{ item.title }}</strong><small>{{ [item.year, item.rating && `КП ${item.rating}`].filter(Boolean).join(' · ') }}</small></span><span v-if="item.current" class="part-current">Сейчас</span></button></div>
+            <div class="franchise-list" role="list"><button v-for="item in visibleFranchiseParts" :key="`${item.id}:${item.order}`" class="franchise-row" :class="{ current: item.current }" :data-nav-id="item.current ? undefined : `part-${item.id}`" :disabled="item.current" :aria-label="`${item.order}. ${item.title}, ${partYear(item)}, HDRezka ${partRatingText(item)}${item.current ? ', текущая часть' : ''}`" @click="openContent(item)"><span class="part-order">{{ String(item.order).padStart(2, '0') }}</span><span class="part-copy"><strong class="franchise-title">{{ item.title }}</strong><small>{{ partYear(item) }}</small></span><span class="franchise-rating"><span class="franchise-rating-main">HDRezka <strong>{{ partRatingText(item) }}</strong></span><small v-if="item.rezkaVotes">{{ item.rezkaVotes }} голосов</small></span><span v-if="item.current" class="part-current">Сейчас</span></button></div>
+            <button v-if="details.parts.length > 3" class="quiet franchise-toggle" type="button" :aria-expanded="partsExpanded" @click="toggleFranchiseParts">{{ partsExpanded ? 'Свернуть' : 'Развернуть' }}</button>
           </section>
-          <section v-if="detailPeople.length" class="shelf detail-people" role="region" aria-label="Персоны"><div class="section-heading"><h2>Персоны</h2></div><div class="poster-row people-row"><button v-for="item in detailPeople" :key="`${item.id}:${item.url}`" class="poster-card person-card" :data-nav-id="`person-${item.id}`" :aria-label="item.name" @click="openPerson(item)"><span class="poster-image"><img v-if="item.photo" :src="item.photo" alt="" width="300" height="450" loading="lazy" decoding="async" @error="($event.target as HTMLImageElement).style.display = 'none'" /><span class="poster-fallback" aria-hidden="true">{{ item.name.slice(0, 1) }}</span></span><span class="poster-title">{{ item.name }}</span><span class="poster-meta">{{ item.role }}</span></button></div></section>
+          <section v-if="detailPeople.length" class="shelf detail-people" role="region" aria-label="Каст"><div class="section-heading"><h2>Каст</h2></div><div class="poster-row people-row"><button v-for="item in detailPeople" :key="item.id" class="poster-card person-card" :data-nav-id="`person-${item.id}`" :aria-label="item.name" @click="openPerson(item)"><span class="poster-image"><img v-if="item.photo" :src="item.photo" alt="" width="300" height="450" loading="lazy" decoding="async" @error="($event.target as HTMLImageElement).style.display = 'none'" /><span class="poster-fallback" aria-hidden="true">{{ item.name.slice(0, 1) }}</span></span><span class="poster-title">{{ item.name }}</span><span class="poster-meta">{{ item.role }}</span></button></div></section>
         </article>
       </template>
       <template v-else-if="route.name === 'person'">

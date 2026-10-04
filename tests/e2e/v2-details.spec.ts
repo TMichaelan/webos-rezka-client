@@ -16,6 +16,9 @@ const gladiator = { id: '757', url: gladiatorUrl, title: 'Гладиатор', t
 const walkingDead = { id: '76', url: walkingDeadUrl, title: 'Ходячие мертвецы', type: 'series' as const, poster: image('#3f493c'), meta: '2010–2022 · Сериал' }
 const pitt = { id: '76523', url: pittUrl, title: 'Больница Питт', type: 'series' as const, poster: image('#38596b'), meta: '2025–… · Сериал', status: 'Выходит' }
 const gladiatorTwo = { id: '69851', url: gladiatorTwoUrl, title: 'Гладиатор II', type: 'movie' as const, poster: image('#725445'), meta: '2024 · Фильм', rating: '6.7' }
+const gladiatorThree = { id: '70003', url: 'https://hdrezka-home.tv/films/action/70003-gladiator-iii.html', title: 'Гладиатор: Очень длинное название третьей части, которое нельзя обрезать', type: 'movie' as const, meta: '2028 · Фильм' }
+const gladiatorFour = { id: '70004', url: 'https://hdrezka-home.tv/films/action/70004-gladiator-iv.html', title: 'Гладиатор IV', type: 'movie' as const, meta: '2030 · Фильм' }
+const gladiatorFive = { id: '70005', url: 'https://hdrezka-home.tv/films/action/70005-gladiator-v.html', title: 'Гладиатор V', type: 'movie' as const, meta: '2032 · Фильм' }
 
 const actors = [
   ['7293', 'Хоакин Феникс', 'hoakin-feniks'], ['4960', 'Конни Нильсен', 'konni-nilsen'], ['11392', 'Оливер Рид', 'oliver-rid'],
@@ -48,7 +51,10 @@ const produced = [film('poker-face', 'Покерфейс', '2022'), film('land-o
 
 const parts = [
   { ...gladiator, order: 1, current: true, year: '2000' },
-  { ...gladiatorTwo, order: 2, year: '2024' },
+  { ...gladiatorTwo, order: 2, year: '2024 год' },
+  { ...gladiatorThree, order: 3, year: '2028' },
+  { ...gladiatorFour, order: 4, year: '2030' },
+  { ...gladiatorFive, order: 5, year: '2032' },
 ]
 
 const movieDetails = (item: typeof gladiator | ReturnType<typeof film>) => ({
@@ -70,7 +76,7 @@ const gladiatorDetails = {
   countries: ['США', 'Великобритания'],
   ageRating: '18+',
   genres: ['Боевик', 'Драма', 'Приключения'],
-  ratings: [{ source: 'IMDb', score: '8.5', votes: '1 700 000' }, { source: 'Кинопоиск', score: '8.6', votes: '620 000' }],
+  ratings: [{ source: 'IMDb', score: '8.5', votes: '1 700 000' }, { source: 'Кинопоиск', score: '8.6', votes: '620 000' }, { source: 'HDRezka', score: '9.46', votes: '10 937' }],
   rankings: [{ name: '250 лучших фильмов', place: 36, url: 'https://hdrezka-home.tv/top-250/' }, { name: 'Лучшие исторические фильмы', place: 4 }],
   trailerAvailable: true,
   directors: [ridleyScott, russellDirector],
@@ -167,6 +173,11 @@ const detailsByUrl = new Map<string, object>([
 ])
 
 const fulfill = (route: Route, result: unknown) => route.fulfill({ json: { returnValue: true, result } })
+const partRatingCalls: string[][] = []
+const partRatingValues: Record<string, { score: string; votes?: string }> = {
+  '69851': { score: '6.56', votes: '6 050' }, '70003': { score: '8.11', votes: '310' },
+  '70004': { score: '7.44', votes: '205' }, '70005': { score: '9.01', votes: '99' }, '76523': { score: '8.43', votes: '4 710' },
+}
 
 async function installV2Api(page: Page) {
   await page.route('**/api/rpc', async route => {
@@ -175,6 +186,11 @@ async function installV2Api(page: Page) {
     if (method === 'details' && detailsByUrl.has(params.url)) return fulfill(route, detailsByUrl.get(params.url))
     if (method === 'person' && [russellCrowe.url, russellDirector.url].includes(params.url)) return fulfill(route, russellCrowe)
     if (method === 'person' && params.url === svenOle.url) return fulfill(route, svenOle)
+    if (method === 'partRatings') {
+      const ids = params.parts.map((item: { id: string }) => item.id)
+      partRatingCalls.push(ids)
+      return fulfill(route, { ratings: ids.flatMap((id: string) => partRatingValues[id] ? [{ id, ...partRatingValues[id] }] : []) })
+    }
     if (method === 'trailer') {
       if (params.id === gladiator.id && params.url === gladiatorUrl) return fulfill(route, { url: trailerUrl })
       return route.fulfill({ json: { returnValue: false, errorCode: 'INVALID_INPUT', errorText: 'Unexpected trailer request' } })
@@ -203,6 +219,7 @@ async function horizontalScroll(card: Locator, moveToEnd = false) {
 }
 
 test.beforeEach(async ({ page, request }) => {
+  partRatingCalls.length = 0
   await request.post(`${backend}/api/test/reset`)
   await installV2Api(page)
 })
@@ -217,16 +234,40 @@ test('movie detail renders supplemental metadata and restores a selected franchi
   await expect(page.getByRole('list', { name: 'Рейтинги' })).toContainText('8.5')
   await expect(page.locator('.detail-actions').getByRole('button', { name: /трейлер/i })).toBeVisible()
 
-  const people = page.getByRole('region', { name: 'Персоны', exact: true })
+  const people = page.getByRole('region', { name: 'Каст', exact: true })
   await expect(people.getByRole('button', { name: /Ридли Скотт/ })).toBeVisible()
   await expect(people.getByRole('button', { name: /Хоакин Феникс/ })).toBeVisible()
   await expect(people.getByRole('button', { name: /Рассел Кроу/ })).toHaveCount(1)
-  await expect(people.getByText('Режиссёр · Актёр', { exact: true })).toBeVisible()
+  await expect(people.getByText('Актёр · Режиссёр', { exact: true })).toBeVisible()
+  await expect(people.locator('.person-card').first()).toHaveAttribute('aria-label', 'Хоакин Феникс')
   await expect(page.getByRole('region', { name: 'Режиссёры', exact: true })).toHaveCount(0)
   await expect(page.getByRole('region', { name: /В ролях/i })).toHaveCount(0)
   const allParts = page.getByRole('region', { name: 'Гладиатор — все части', exact: true })
+  const partRows = allParts.locator('.franchise-row')
   const sequel = allParts.getByRole('button', { name: /Гладиатор II/ })
+  const third = allParts.getByRole('button', { name: /Очень длинное название третьей части/ })
+  await expect(partRows).toHaveCount(3)
   await expect(sequel).toBeVisible()
+  await expect(third).toBeVisible()
+  await expect(allParts.locator('.poster-row')).toHaveCount(0)
+  await expect(allParts.getByText('2000 год', { exact: true })).toBeVisible()
+  await expect(allParts.getByText('2024 год', { exact: true })).toBeVisible()
+  await expect(allParts.getByText('HDRezka 9.46', { exact: true })).toBeVisible()
+  await expect(allParts.getByText('HDRezka 6.56', { exact: true })).toBeVisible()
+  await expect(allParts.getByText('HDRezka 8.11', { exact: true })).toBeVisible()
+  await expect.poll(() => partRatingCalls).toEqual([['69851', '70003']])
+  await expect.poll(() => third.locator('.franchise-title').evaluate(element => ({ whiteSpace: getComputedStyle(element).whiteSpace, fits: element.scrollWidth <= element.clientWidth }))).toEqual({ whiteSpace: 'normal', fits: true })
+  await sequel.focus()
+  await page.keyboard.press('ArrowDown')
+  await expect(third).toBeFocused()
+  const expand = allParts.getByRole('button', { name: 'Развернуть', exact: true })
+  await expand.click()
+  await expect(partRows).toHaveCount(5)
+  await expect(allParts.getByText('HDRezka 7.44', { exact: true })).toBeVisible()
+  await expect(allParts.getByText('HDRezka 9.01', { exact: true })).toBeVisible()
+  await expect.poll(() => partRatingCalls).toEqual([['69851', '70003'], ['70004', '70005']])
+  await allParts.getByRole('button', { name: 'Свернуть', exact: true }).click()
+  await expect(partRows).toHaveCount(3)
   await expect(page.getByRole('region', { name: /Расписание/i })).toHaveCount(0)
   await expect.poll(() => page.locator('.detail-parts').evaluate(element => getComputedStyle(element).borderTopWidth)).toBe('0px')
   await expect.poll(() => page.locator('.detail-people').evaluate(element => getComputedStyle(element).borderTopWidth)).toBe('0px')
@@ -237,6 +278,146 @@ test('movie detail renders supplemental metadata and restores a selected franchi
   await page.keyboard.press('Escape')
   await expect(page.getByRole('heading', { name: 'Гладиатор', exact: true })).toBeVisible()
   await expect(sequel).toBeFocused()
+})
+
+test('franchise list is vertical, collapsed and loads HDRezka ratings lazily', async ({ page }) => {
+  await openNew(page, gladiator.id, gladiator.title)
+  const section = page.getByRole('region', { name: 'Гладиатор — все части', exact: true })
+
+  await expect(section.locator('.franchise-row')).toHaveCount(3)
+  await expect(section.locator('.poster-row')).toHaveCount(0)
+  await expect(section.getByRole('button', { name: 'Развернуть', exact: true })).toBeVisible()
+  await expect(section.getByText('HDRezka 6.56', { exact: true })).toBeVisible()
+})
+
+test('expanding a franchise focuses and reveals its first new row', async ({ page }) => {
+  await openNew(page, gladiator.id, gladiator.title)
+  const section = page.getByRole('region', { name: 'Гладиатор — все части', exact: true })
+  const fourth = section.getByRole('button', { name: /Гладиатор IV/ })
+
+  await section.getByRole('button', { name: 'Развернуть', exact: true }).click()
+
+  await expect(fourth).toBeFocused()
+  await expect.poll(() => fourth.evaluate(element => {
+    const row = element.getBoundingClientRect(), viewport = element.closest('.content-area')!.getBoundingClientRect()
+    return row.top >= viewport.top && row.bottom <= viewport.bottom
+  })).toBe(true)
+})
+
+test('collapsing a franchise keeps its toggle focused and visible', async ({ page }) => {
+  await openNew(page, gladiator.id, gladiator.title)
+  const section = page.getByRole('region', { name: 'Гладиатор — все части', exact: true })
+  const toggle = section.locator('.franchise-toggle')
+  await toggle.click()
+  await toggle.click()
+
+  await expect(section.locator('.franchise-row')).toHaveCount(3)
+  await expect(toggle).toBeFocused()
+  await expect.poll(() => toggle.evaluate(element => {
+    const control = element.getBoundingClientRect(), viewport = element.closest('.content-area')!.getBoundingClientRect()
+    return control.top >= viewport.top && control.bottom <= viewport.bottom
+  })).toBe(true)
+})
+
+test('ArrowUp from the first Cast card returns to the franchise toggle', async ({ page }) => {
+  await openNew(page, gladiator.id, gladiator.title)
+  const toggle = page.getByRole('region', { name: 'Гладиатор — все части', exact: true }).getByRole('button', { name: 'Развернуть', exact: true })
+  const firstCastCard = page.getByRole('region', { name: 'Каст', exact: true }).getByRole('button').first()
+
+  await firstCastCard.focus()
+  await page.keyboard.press('ArrowUp')
+
+  await expect(toggle).toBeFocused()
+})
+
+test('ArrowUp from the first Cast card returns to the last franchise row when there is no toggle', async ({ page }) => {
+  await page.route('**/api/rpc', async route => {
+    const { method, params = {} } = route.request().postDataJSON()
+    if (method === 'details' && params.url === gladiatorUrl) return fulfill(route, { ...gladiatorDetails, parts: parts.slice(0, 3) })
+    await route.fallback()
+  })
+  await openNew(page, gladiator.id, gladiator.title)
+  const section = page.getByRole('region', { name: 'Гладиатор — все части', exact: true })
+  const lastPart = section.getByRole('button', { name: /Очень длинное название третьей части/ })
+  const firstCastCard = page.getByRole('region', { name: 'Каст', exact: true }).getByRole('button').first()
+
+  await firstCastCard.focus()
+  await page.keyboard.press('ArrowUp')
+
+  await expect(section.locator('.franchise-toggle')).toHaveCount(0)
+  await expect(lastPart).toBeFocused()
+})
+
+test('failed franchise ratings settle as unavailable', async ({ page }) => {
+  await page.route('**/api/rpc', async route => {
+    if (route.request().postDataJSON().method === 'partRatings') {
+      return route.fulfill({ json: { returnValue: false, errorCode: 'NETWORK_ERROR', errorText: 'Ratings unavailable' } })
+    }
+    await route.fallback()
+  })
+  await openNew(page, gladiator.id, gladiator.title)
+
+  const sequel = page.getByRole('region', { name: 'Гладиатор — все части', exact: true }).getByRole('button', { name: /Гладиатор II/ })
+  await expect(sequel.locator('.franchise-rating-main')).toHaveText('HDRezka —')
+})
+
+test('aborted franchise ratings retry after replacement details load', async ({ page }) => {
+  let release!: () => void
+  let markStarted!: () => void
+  const gate = new Promise<void>(resolve => { release = resolve })
+  const started = new Promise<void>(resolve => { markStarted = resolve })
+  let ratingRequest = 0
+  await page.route('**/api/rpc', async route => {
+    const { method, params = {} } = route.request().postDataJSON()
+    if (method !== 'partRatings') return route.fallback()
+    ratingRequest++
+    if (ratingRequest === 1) {
+      markStarted()
+      await gate
+      await route.abort().catch(() => {})
+      return
+    }
+    return fulfill(route, { ratings: params.parts.map((item: { id: string }) => ({ id: item.id, ...partRatingValues[item.id] })) })
+  })
+  await openNew(page, pitt.id, pitt.title)
+  await started
+
+  const voice = page.getByRole('combobox', { name: 'Озвучка', exact: true })
+  await chooseTvOption(page, voice, '2')
+  release()
+  await expect(voice).toHaveAttribute('data-value', '2')
+  const sequel = page.getByRole('region', { name: 'Больница Питт — все части', exact: true }).getByRole('button', { name: /Гладиатор II/ })
+  await expect(sequel.locator('.franchise-rating-main')).toHaveText('HDRezka 6.56')
+})
+
+test('a failed franchise rating chunk does not stop later chunks', async ({ page }) => {
+  const chunkedParts = [
+    parts[0],
+    ...Array.from({ length: 24 }, (_, index) => {
+      const order = index + 2
+      return { id: String(71000 + order), url: `https://hdrezka-home.tv/films/action/${71000 + order}-part-${order}.html`, title: `Гладиатор ${order}`, type: 'movie' as const, meta: `${2000 + order} · Фильм`, order, year: String(2000 + order) }
+    }),
+  ]
+  let ratingRequest = 0
+  await page.route('**/api/rpc', async route => {
+    const { method, params = {} } = route.request().postDataJSON()
+    if (method === 'details' && params.url === gladiatorUrl) return fulfill(route, { ...gladiatorDetails, parts: chunkedParts })
+    if (method === 'partRatings') {
+      ratingRequest++
+      if (ratingRequest === 1) return fulfill(route, { ratings: [] })
+      if (ratingRequest === 2) return route.fulfill({ json: { returnValue: false, errorCode: 'NETWORK_ERROR', errorText: 'Ratings unavailable' } })
+      return fulfill(route, { ratings: params.parts.map((item: { id: string }) => ({ id: item.id, score: '7.77' })) })
+    }
+    await route.fallback()
+  })
+  await openNew(page, gladiator.id, gladiator.title)
+
+  const section = page.getByRole('region', { name: 'Гладиатор — все части', exact: true })
+  await section.getByRole('button', { name: 'Развернуть', exact: true }).click()
+  const failedPart = section.getByRole('button', { name: /Гладиатор 4,/ })
+  const laterPart = section.getByRole('button', { name: /Гладиатор 25,/ })
+  await expect(laterPart.locator('.franchise-rating-main')).toHaveText('HDRezka 7.77')
+  await expect(failedPart.locator('.franchise-rating-main')).toHaveText('HDRezka —')
 })
 
 test('series schedule defaults to its first season and keeps episode rows informational', async ({ page }) => {
@@ -324,12 +505,12 @@ test('single-season schedule reveals its collapse toggle when reached from episo
 test('person filmography is grouped and Back restores both card focus and horizontal scroll', async ({ page }) => {
   await openNew(page, gladiator.id, gladiator.title)
 
-  const people = page.getByRole('region', { name: 'Персоны', exact: true })
+  const people = page.getByRole('region', { name: 'Каст', exact: true })
   const personCards = people.getByRole('button')
   const actor = people.getByRole('button', { name: /Свен-Оле Торсен/ })
   await expect(actor).toBeVisible()
   await personCards.first().focus()
-  for (let index = 1; index < await personCards.count(); index++) await page.keyboard.press('ArrowRight')
+  for (let index = 1; index < await personCards.count() && !await actor.evaluate(element => document.activeElement === element); index++) await page.keyboard.press('ArrowRight')
   await expect(actor).toBeFocused()
   await expect.poll(() => horizontalScroll(actor)).toBeGreaterThan(500)
   const castScroll = await horizontalScroll(actor)

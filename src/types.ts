@@ -7,7 +7,7 @@ export interface Episode { season: number; episode: number; title?: string; watc
 export interface Rating { source: 'IMDb' | 'Кинопоиск' | 'World Art' | 'HDRezka'; score: string; votes?: string }
 export interface PersonSummary { id: string; name: string; url: string; photo?: string }
 export interface ScheduleEpisode { season: number; episode: number; title?: string; originalTitle?: string; airDate?: string; relative?: string; state: 'aired' | 'upcoming'; current?: boolean; watched?: boolean }
-export interface FranchisePart extends Content { order: number; current?: boolean; year?: string; rating?: string }
+export interface FranchisePart extends Content { order: number; current?: boolean; year?: string; rating?: string; rezkaRating?: string; rezkaVotes?: string }
 export interface Ranking { name: string; place?: number; url?: string }
 export interface FilmographyGroup { role: string; summary?: string; items: Content[] }
 export interface PersonDetails { id: string; name: string; originalName?: string; url: string; photo?: string; facts?: { label: string; value: string }[]; careers: FilmographyGroup[] }
@@ -31,6 +31,7 @@ export interface Methods {
   search: { params: { query: string; page?: number }; result: Page }
   details: { params: { url: string; translatorId?: string }; result: Details }
   person: { params: { url: string }; result: PersonDetails }
+  partRatings: { params: { parts: { id: string; url: string }[] }; result: { ratings: { id: string; score: string; votes?: string }[] } }
   trailer: { params: { id: string; url: string }; result: { url: string } }
   streams: { params: { id: string; url: string; translatorId: string; season?: number; episode?: number }; result: PlaybackSource }
   subtitle: { params: { url: string }; result: { text: string } }

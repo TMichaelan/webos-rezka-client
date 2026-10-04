@@ -72,10 +72,15 @@ function shelfTarget(active: HTMLElement, key: string, scope: ParentNode) {
   if (!row || !shelf || !['ArrowUp', 'ArrowDown'].includes(key)) return;
   const shelfControl = key === 'ArrowUp' ? shelf.querySelector<HTMLElement>('.section-heading button:not(:disabled),.empty-state button:not(:disabled)') : undefined;
   if (shelfControl) return { target: shelfControl, boundary: false as const };
-  const shelves = [...scope.querySelectorAll<HTMLElement>('.shelf')].filter(item => item.querySelector('.poster-row > .poster-card:not(:disabled),.empty-state button:not(:disabled)'));
+  const shelves = [...scope.querySelectorAll<HTMLElement>('.shelf')].filter(item => item.querySelector('.poster-row > .poster-card:not(:disabled),.franchise-list > .franchise-row:not(:disabled),.franchise-toggle:not(:disabled),.empty-state button:not(:disabled)'));
   const targetIndex = shelves.indexOf(shelf) + (key === 'ArrowUp' ? -1 : 1);
   const targetShelf = shelves[targetIndex];
   if (!targetShelf) return { boundary: true as const };
+  const franchiseList = targetShelf.querySelector<HTMLElement>('.franchise-list');
+  if (key === 'ArrowUp' && franchiseList) {
+    const rows = [...franchiseList.querySelectorAll<HTMLElement>('.franchise-row:not(:disabled)')];
+    return { target: targetShelf.querySelector<HTMLElement>('.franchise-toggle:not(:disabled)') || rows.at(-1), boundary: false as const, start: false };
+  }
   const firstCard = targetShelf.querySelector<HTMLElement>('.poster-row > .poster-card:not(:disabled)');
   if (!firstCard) return { target: targetShelf.querySelector<HTMLElement>('.empty-state button:not(:disabled)') || undefined, boundary: false as const, start: targetIndex === 0 };
   const targetRow = firstCard.closest<HTMLElement>('.poster-row')!;
