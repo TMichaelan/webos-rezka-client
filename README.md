@@ -50,7 +50,7 @@
 Через CLI:
 
 ```sh
-ares-install --device <DEVICE_NAME> io.github.tmichaelan.app.rezkaclient_0.1.12_all.ipk
+ares-install --device <DEVICE_NAME> io.github.tmichaelan.app.rezkaclient_0.1.13_all.ipk
 ares-launch --device <DEVICE_NAME> io.github.tmichaelan.app.rezkaclient
 ```
 
@@ -99,6 +99,7 @@ E2E запускаются на локальном fixture-сервисе и н�
 - Телеметрии, аналитики и собственного удалённого сервера нет.
 - Runtime обращается к выбранному HTTPS-зеркалу HDRezka и к выданным им медиа/субтитрам.
 - Redirect, TLS, размер ответа и адреса субтитров проверяются; private/reserved IP блокируются.
+- Совместимые Anubis 1.x `fast`-проверки определяются по возможностям протокола; неизвестные алгоритмы отклоняются.
 - `.state/`, `.env*`, ключи, сертификаты, сборки и IPK исключены из Git.
 
 ## Ограничения

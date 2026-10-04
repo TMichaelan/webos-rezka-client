@@ -229,7 +229,8 @@ class RezkaTransport {
         if (nodes.length !== 1 || nodes[0].getAttribute('type') !== 'application/json') throw unsupported();
         return JSON.parse(nodes[0].textContent);
       };
-      if (json('anubis_version') !== '1.25.0') throw unsupported();
+      const version = json('anubis_version');
+      if (typeof version !== 'string' || !/^v?1\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$/.test(version)) throw unsupported();
       const data = json('anubis_challenge'), prefix = json('anubis_base_prefix');
       const rules = data && data.rules, challenge = data && data.challenge;
       if (!rules || !challenge || rules.algorithm !== 'fast' || challenge.method !== 'fast' ||

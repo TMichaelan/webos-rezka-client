@@ -32,8 +32,8 @@ function challenge({ version = '1.25.0', algorithm = 'fast', difficulty = 2, iss
   const data = { rules: { algorithm, difficulty }, challenge: { issuedAt, metadata: { 'User-Agent': 'fixture', 'X-Real-Ip': '127.0.0.1' }, id: challengeId, method: algorithm, randomData: seed, policyRuleHash: 'fixture', difficulty, spent } };
   return `<html><script id="anubis_version" type="application/json">${JSON.stringify(version)}</script><script id="anubis_base_prefix" type="application/json">${JSON.stringify(prefix)}</script><script id="anubis_public_url" type="application/json">""</script><script id="anubis_challenge" type="application/json">${JSON.stringify(data)}</script><script>throw new Error('must not execute remote scripts')</script></html>`;
 }
-function verifyProof(req, url) {
-  assert.match(req.headers.cookie || '', /techaro\.lol-anubis-cookie-verification=/);
+function verifyProof(req, url, verificationCookie = /techaro\.lol-anubis-cookie-verification=/) {
+  assert.match(req.headers.cookie || '', verificationCookie);
   assert.equal(url.searchParams.get('id'), challengeId);
   assert.match(url.searchParams.get('nonce'), /^\d+$/);
   const hash = crypto.createHash('sha256').update(seed + url.searchParams.get('nonce')).digest('hex');
@@ -137,6 +137,20 @@ test('completes real Anubis fast protocol, retains verification cookie, and reus
   assert.equal(proofs, 1);
 });
 
+test('accepts a v-prefixed compatible Anubis 1.x challenge with dynamic cookie names', async t => {
+  let proofs = 0;
+  const mirror = await server(t, (req, res) => {
+    const url = new URL(req.url, 'http://fixture');
+    if (url.pathname.endsWith('/api/pass-challenge')) {
+      verifyProof(req, url, /anubis-verification-v127=/); proofs++;
+      res.writeHead(302, { 'Set-Cookie': 'anubis-auth-v127=admitted; Path=/; HttpOnly', Location: '/' }); res.end();
+    } else if ((req.headers.cookie || '').includes('anubis-auth-v127=admitted')) res.end('catalog');
+    else { res.setHeader('Set-Cookie', `anubis-verification-v127=${challengeId}; Path=/`); res.end(challenge({ version: 'v1.27.0' })); }
+  });
+  assert.equal((await transport(mirror).request('/')).body, 'catalog');
+  assert.equal(proofs, 1);
+});
+
 test('replays challenged POST once after admission and preserves its form without sending it to solver', async t => {
   let loginWrites = 0;
   const mirror = await server(t, (req, res) => {
@@ -164,9 +178,16 @@ test('refreshes expired challenge instead of computing a spent proof', async t =
 });
 
 test('rejects unsupported, malformed and excessive-work challenge pages including HTTP 200', async t => {
-  const bodies = [challenge({ algorithm: 'unknown' }), challenge({ version: '9.0.0' }), challenge({ difficulty: 30 }), challenge({ prefix: '//evil.example' }), '<script id="anubis_challenge" type="application/json">invalid</script>', '<html>Making sure you are not a bot!<script src="/.within.website/x/cmd/anubis/static/js/main.mjs"></script></html>'];
+  const bodies = [challenge({ algorithm: 'unknown' }), challenge({ version: 'v2.0.0' }), challenge({ difficulty: 30 }), challenge({ prefix: '//evil.example' }), '<script id="anubis_challenge" type="application/json">invalid</script>', '<html>Making sure you are not a bot!<script src="/.within.website/x/cmd/anubis/static/js/main.mjs"></script></html>'];
   const mirror = await server(t, (_req, res) => res.end(bodies.shift()));
   for (let i = 0; i < 6; i++) await assert.rejects(transport(mirror).request('/'), code('UNSUPPORTED_CHALLENGE'));
+});
+
+test('rejects malformed Anubis semantic versions', async t => {
+  for (const version of ['01.27.0', 'v01.27.0', '1.027.0', '1.27.00']) {
+    const mirror = await server(t, (_req, res) => res.end(challenge({ version })));
+    await assert.rejects(transport(mirror).request('/'), code('UNSUPPORTED_CHALLENGE'));
+  }
 });
 
 test('a repeated valid challenge terminates without returning challenge HTML as success', async t => {
