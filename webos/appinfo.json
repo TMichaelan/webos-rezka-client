@@ -1,6 +1,6 @@
 {
   "id": "io.github.tmichaelan.app.rezkaclient",
-  "version": "0.1.14",
+  "version": "0.1.15",
   "vendor": "Rezka Client contributors",
   "type": "web",
   "main": "index.html",

@@ -25,6 +25,8 @@ const actors = [
   ['11054', 'Томми Флэнаган', 'tommi-flenagan'], ['11055', 'Свен-Оле Торсен', 'sven-ole-torsen'], ['716', 'Рассел Кроу', 'rassel-krou'],
 ].map(([id, name, slug]) => ({ id, name, url: `https://hdrezka-home.tv/person/${id}-${slug}/`, photo }))
 const ridleyScott = { id: '3722', name: 'Ридли Скотт', url: 'https://hdrezka-home.tv/person/3722-ridli-skott/', photo }
+const russellDirector = { ...actors.at(-1)!, url: 'https://hdrezka-home.tv/person/716-rassel-krou-director/' }
+const svenActor = actors.find(item => item.id === '11055')!
 
 let nextFilmId = 8000
 const film = (slug: string, title: string, year: string) => { const id = String(nextFilmId++); return { id, url: `https://hdrezka-home.tv/films/drama/${id}-${slug}.html`, title, type: 'movie' as const, poster: image('#4d5864'), meta: `${year} · Фильм` } }
@@ -71,7 +73,7 @@ const gladiatorDetails = {
   ratings: [{ source: 'IMDb', score: '8.5', votes: '1 700 000' }, { source: 'Кинопоиск', score: '8.6', votes: '620 000' }],
   rankings: [{ name: '250 лучших фильмов', place: 36, url: 'https://hdrezka-home.tv/top-250/' }, { name: 'Лучшие исторические фильмы', place: 4 }],
   trailerAvailable: true,
-  directors: [ridleyScott, actors.at(-1)!],
+  directors: [ridleyScott, russellDirector],
   actors,
   franchiseTitle: 'Гладиатор — все части',
   parts,
@@ -102,9 +104,16 @@ const pittDetails = {
   franchiseTitle: 'Больница Питт — все части',
   parts: [{ ...pitt, order: 1, current: true, year: '2025' }, { ...gladiatorTwo, order: 2, year: '2024' }],
   schedule: [
-    { season: 2, episode: 1, title: 'После смены', originalTitle: 'After the Shift', airDate: '2 октября 2026', state: 'aired' },
-    { season: 2, episode: 2, title: 'Новое руководство', originalTitle: 'New Management', airDate: '9 октября 2026', relative: 'через 5 дней', state: 'upcoming' },
-    { season: 1, episode: 15, title: 'Седьмой этаж', originalTitle: '7:00 P.M.', airDate: '10 апреля 2025', state: 'aired' },
+    { season: 2, episode: 5, title: 'Будущее 5', originalTitle: 'Future 5', airDate: '30 октября 2026', relative: 'через 26 дней', state: 'upcoming' },
+    { season: 2, episode: 1, title: 'Будущее 1', originalTitle: 'Future 1', airDate: '2 октября 2026', relative: 'через 5 дней', state: 'upcoming' },
+    { season: 2, episode: 4, title: 'Будущее 4', originalTitle: 'Future 4', airDate: '23 октября 2026', relative: 'через 19 дней', state: 'upcoming' },
+    { season: 2, episode: 2, title: 'Будущее 2', originalTitle: 'Future 2', airDate: '9 октября 2026', relative: 'через 12 дней', state: 'upcoming' },
+    { season: 2, episode: 3, title: 'Будущее 3', originalTitle: 'Future 3', airDate: '16 октября 2026', relative: 'через 15 дней', state: 'upcoming' },
+    { season: 1, episode: 2, title: 'Вышла 2', originalTitle: 'Aired 2', airDate: '6 февраля 2025', state: 'aired' },
+    { season: 1, episode: 5, title: 'Вышла 5', originalTitle: 'Aired 5', airDate: '27 февраля 2025', state: 'aired' },
+    { season: 1, episode: 1, title: 'Вышла 1', originalTitle: 'Aired 1', airDate: '30 января 2025', state: 'aired' },
+    { season: 1, episode: 4, title: 'Вышла 4', originalTitle: 'Aired 4', airDate: '20 февраля 2025', state: 'aired' },
+    { season: 1, episode: 3, title: 'Вышла 3', originalTitle: 'Aired 3', airDate: '13 февраля 2025', state: 'aired' },
   ],
 }
 
@@ -138,6 +147,15 @@ const russellCrowe = {
     { role: 'Продюсер', summary: '8 проектов', items: produced },
   ],
 }
+const svenOle = {
+  id: svenActor.id,
+  name: svenActor.name,
+  originalName: 'Sven-Ole Thorsen',
+  url: svenActor.url,
+  photo,
+  facts: [{ label: 'Дата рождения', value: '24 сентября 1944' }, { label: 'Место рождения', value: 'Копенгаген, Дания' }],
+  careers: [{ role: 'Актёр', summary: '24 фильма', items: filmography }],
+}
 
 const detailsByUrl = new Map<string, object>([
   ...filmography.map(item => [item.url, movieDetails(item)] as const),
@@ -155,7 +173,8 @@ async function installV2Api(page: Page) {
     const { method, params = {} } = route.request().postDataJSON()
     if (method === 'catalog') return fulfill(route, { items: [gladiator, walkingDead, pitt], page: params.page || 1, hasMore: false })
     if (method === 'details' && detailsByUrl.has(params.url)) return fulfill(route, detailsByUrl.get(params.url))
-    if (method === 'person' && params.url === russellCrowe.url) return fulfill(route, russellCrowe)
+    if (method === 'person' && [russellCrowe.url, russellDirector.url].includes(params.url)) return fulfill(route, russellCrowe)
+    if (method === 'person' && params.url === svenOle.url) return fulfill(route, svenOle)
     if (method === 'trailer') {
       if (params.id === gladiator.id && params.url === gladiatorUrl) return fulfill(route, { url: trailerUrl })
       return route.fulfill({ json: { returnValue: false, errorCode: 'INVALID_INPUT', errorText: 'Unexpected trailer request' } })
@@ -198,14 +217,19 @@ test('movie detail renders supplemental metadata and restores a selected franchi
   await expect(page.getByRole('list', { name: 'Рейтинги' })).toContainText('8.5')
   await expect(page.locator('.detail-actions').getByRole('button', { name: /трейлер/i })).toBeVisible()
 
-  const directors = page.getByRole('region', { name: 'Режиссёры', exact: true })
-  await expect(directors.getByRole('button', { name: /Ридли Скотт/ })).toBeVisible()
-  const cast = page.getByRole('region', { name: /В ролях/i })
-  await expect(cast.getByRole('button', { name: /Хоакин Феникс/ })).toBeVisible()
+  const people = page.getByRole('region', { name: 'Персоны', exact: true })
+  await expect(people.getByRole('button', { name: /Ридли Скотт/ })).toBeVisible()
+  await expect(people.getByRole('button', { name: /Хоакин Феникс/ })).toBeVisible()
+  await expect(people.getByRole('button', { name: /Рассел Кроу/ })).toHaveCount(1)
+  await expect(people.getByText('Режиссёр · Актёр', { exact: true })).toBeVisible()
+  await expect(page.getByRole('region', { name: 'Режиссёры', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('region', { name: /В ролях/i })).toHaveCount(0)
   const allParts = page.getByRole('region', { name: 'Гладиатор — все части', exact: true })
   const sequel = allParts.getByRole('button', { name: /Гладиатор II/ })
   await expect(sequel).toBeVisible()
   await expect(page.getByRole('region', { name: /Расписание/i })).toHaveCount(0)
+  await expect.poll(() => page.locator('.detail-parts').evaluate(element => getComputedStyle(element).borderTopWidth)).toBe('0px')
+  await expect.poll(() => page.locator('.detail-people').evaluate(element => getComputedStyle(element).borderTopWidth)).toBe('0px')
 
   await sequel.focus()
   await sequel.click()
@@ -225,18 +249,30 @@ test('series schedule defaults to its first season and keeps episode rows inform
   await episode.focus()
   await page.keyboard.press('ArrowDown')
   await expect(season).toBeFocused()
-  await expect(schedule.getByText(/(?:Серия\s*2|2\s*серия|^02$)/i)).toBeVisible()
-  await expect(schedule.getByText('Новое руководство', { exact: true })).toBeVisible()
-  await expect(schedule.getByText('New Management', { exact: true })).toBeVisible()
-  await expect(schedule.getByText('9 октября 2026', { exact: true })).toBeVisible()
+  const rows = schedule.locator('.schedule-row')
+  await expect(rows).toHaveCount(3)
+  await expect(rows.locator('.schedule-title strong')).toHaveText(['Будущее 1', 'Будущее 2', 'Будущее 3'])
   await expect(schedule.getByText('через 5 дней', { exact: true })).toBeVisible()
-  await expect(schedule.getByText('Седьмой этаж', { exact: true })).toHaveCount(0)
-  await expect(schedule.locator('button:not([disabled]),a[href],input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])')).toHaveCount(1)
+  await expect(schedule.getByText('Будущее 4', { exact: true })).toHaveCount(0)
+  const toggle = schedule.getByRole('button', { name: 'Развернуть', exact: true })
+  await expect(toggle).toBeVisible()
+  await expect(schedule.locator('button:not([disabled]),a[href],input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])')).toHaveCount(2)
+  await toggle.click()
+  await expect(rows).toHaveCount(5)
+  await expect(rows.locator('.schedule-title strong')).toHaveText(['Будущее 1', 'Будущее 2', 'Будущее 3', 'Будущее 4', 'Будущее 5'])
+  await expect.poll(() => page.locator('.detail-episodes').evaluate(element => getComputedStyle(element).borderTopWidth)).toBe('0px')
+  await expect.poll(() => page.locator('.detail-schedule').evaluate(element => getComputedStyle(element).borderTopWidth)).toBe('0px')
+  await expect.poll(() => page.locator('.detail-parts').evaluate(element => getComputedStyle(element).borderTopWidth)).toBe('0px')
 
   await chooseTvOption(page, season, 1)
-  await expect(schedule.getByText('Седьмой этаж', { exact: true })).toBeVisible()
-  await expect(schedule.getByText('7:00 P.M.', { exact: true })).toBeVisible()
-  await expect(schedule.getByText('Новое руководство', { exact: true })).toHaveCount(0)
+  await expect(rows).toHaveCount(3)
+  await expect(rows.locator('.schedule-title strong')).toHaveText(['Вышла 5', 'Вышла 4', 'Вышла 3'])
+  await expect(schedule.getByText('Вышла 2', { exact: true })).toHaveCount(0)
+  await expect(schedule.getByRole('button', { name: 'Развернуть', exact: true })).toBeVisible()
+  await expect(schedule.getByText('Будущее 1', { exact: true })).toHaveCount(0)
+  await schedule.getByRole('button', { name: 'Развернуть', exact: true }).click()
+  await expect(rows).toHaveCount(5)
+  await expect(schedule.getByRole('button', { name: 'Свернуть', exact: true })).toBeVisible()
   await episode.click()
   await chooseTvOption(page, page.getByRole('combobox', { name: 'Озвучка', exact: true }), '2')
   await expect(season).toHaveAttribute('data-value', '1')
@@ -250,6 +286,8 @@ test('series schedule defaults to its first season and keeps episode rows inform
   await expect(page.getByRole('heading', { name: pitt.title, exact: true })).toBeVisible()
   await expect(episode).toHaveAttribute('aria-pressed', 'true')
   await expect(season).toHaveAttribute('data-value', '1')
+  await expect(rows).toHaveCount(5)
+  await expect(schedule.getByRole('button', { name: 'Свернуть', exact: true })).toBeVisible()
   await expect(page.locator('.detail-facts dd')).toContainText(['2025–…', 'Выходит'])
   await expect(sequel).toBeFocused()
 
@@ -258,44 +296,76 @@ test('series schedule defaults to its first season and keeps episode rows inform
   const nextSchedule = page.getByRole('region', { name: /Расписание/i })
   await expect(nextSchedule.getByRole('combobox', { name: /Сезон/i })).toHaveAttribute('data-value', '11')
   await expect(nextSchedule.getByText('Покойся с миром', { exact: true })).toBeVisible()
+  await expect(nextSchedule.getByRole('button', { name: /Развернуть|Свернуть/ })).toHaveCount(0)
+})
+
+test('single-season schedule reveals its collapse toggle when reached from episodes', async ({ page }) => {
+  const schedule = [5, 2, 4, 1, 3].map(episode => ({ season: 11, episode, title: `Вышла ${episode}`, originalTitle: `Aired ${episode}`, airDate: `${episode} ноября 2022`, state: 'aired' }))
+  await page.route('**/api/rpc', async route => {
+    const { method, params = {} } = route.request().postDataJSON()
+    if (method === 'details' && params.url === walkingDeadUrl) return fulfill(route, { ...walkingDeadDetails, schedule })
+    await route.fallback()
+  })
+  await openNew(page, walkingDead.id, walkingDead.title)
+
+  const region = page.getByRole('region', { name: /Расписание/i })
+  await expect(region.locator('.schedule-title strong')).toHaveText(['Вышла 5', 'Вышла 4', 'Вышла 3'])
+  const episode = page.locator('[data-nav-id="episode-11-24"]')
+  await episode.focus()
+  await page.keyboard.press('ArrowDown')
+  const toggle = region.getByRole('button', { name: 'Развернуть', exact: true })
+  await expect(toggle).toBeFocused()
+  await expect.poll(() => toggle.evaluate(element => {
+    const control = element.getBoundingClientRect(), viewport = element.closest('.content-area')!.getBoundingClientRect()
+    return control.top >= viewport.top && control.bottom <= viewport.bottom
+  })).toBe(true)
 })
 
 test('person filmography is grouped and Back restores both card focus and horizontal scroll', async ({ page }) => {
   await openNew(page, gladiator.id, gladiator.title)
 
-  const cast = page.getByRole('region', { name: /В ролях/i })
-  const actor = cast.getByRole('button', { name: /Рассел Кроу/ })
+  const people = page.getByRole('region', { name: 'Персоны', exact: true })
+  const personCards = people.getByRole('button')
+  const actor = people.getByRole('button', { name: /Свен-Оле Торсен/ })
   await expect(actor).toBeVisible()
-  await actor.focus()
-  const castScroll = await horizontalScroll(actor, true)
+  await personCards.first().focus()
+  for (let index = 1; index < await personCards.count(); index++) await page.keyboard.press('ArrowRight')
+  await expect(actor).toBeFocused()
+  await expect.poll(() => horizontalScroll(actor)).toBeGreaterThan(500)
+  const castScroll = await horizontalScroll(actor)
   expect(castScroll).toBeGreaterThan(0)
   await actor.click()
 
-  await expect(page.getByRole('heading', { name: 'Рассел Кроу', exact: true })).toBeVisible()
-  await expect(page.getByRole('img', { name: 'Рассел Кроу', exact: true })).toBeVisible()
-  await expect(page.getByText('Russell Crowe', { exact: true })).toBeVisible()
-  await expect(page.getByText('7 апреля 1964', { exact: true })).toBeVisible()
-  await expect(page.getByText('Веллингтон, Новая Зеландия', { exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Свен-Оле Торсен', exact: true })).toBeVisible()
+  await expect(page.getByRole('img', { name: 'Свен-Оле Торсен', exact: true })).toBeVisible()
+  await expect(page.getByText('Sven-Ole Thorsen', { exact: true })).toBeVisible()
+  await expect(page.getByText('24 сентября 1944', { exact: true })).toBeVisible()
+  await expect(page.getByText('Копенгаген, Дания', { exact: true })).toBeVisible()
   const acting = page.getByRole('region', { name: /Актёр/i })
-  await expect(acting).toContainText('52 фильма и сериала')
-  await expect(page.getByRole('region', { name: /Продюсер/i })).toContainText('Покерфейс')
+  await expect(acting).toContainText('24 фильма')
 
   const filmCard = acting.getByRole('button', { name: /Славные парни/ })
-  await filmCard.focus()
-  const filmographyScroll = await horizontalScroll(filmCard, true)
+  const filmCards = acting.getByRole('button')
+  await filmCards.first().focus()
+  for (let index = 1; index < await filmCards.count(); index++) await page.keyboard.press('ArrowRight')
+  await expect(filmCard).toBeFocused()
+  await expect.poll(() => horizontalScroll(filmCard)).toBeGreaterThan(500)
+  const filmographyScroll = await horizontalScroll(filmCard)
   expect(filmographyScroll).toBeGreaterThan(0)
   await filmCard.click()
   await expect(page.getByRole('heading', { name: 'Славные парни', exact: true })).toBeVisible()
 
   await page.keyboard.press('Escape')
-  await expect(page.getByRole('heading', { name: 'Рассел Кроу', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Свен-Оле Торсен', exact: true })).toBeVisible()
   await expect(filmCard).toBeFocused()
-  await expect.poll(() => horizontalScroll(filmCard)).toBe(filmographyScroll)
+  await expect.poll(() => horizontalScroll(filmCard)).toBeGreaterThan(500)
+  await expect.poll(() => filmCard.evaluate(element => { const card = element.getBoundingClientRect(), rail = element.closest('.poster-row')!.getBoundingClientRect(); return card.left >= rail.left && card.right <= rail.right })).toBe(true)
 
   await page.keyboard.press('Escape')
   await expect(page.getByRole('heading', { name: 'Гладиатор', exact: true })).toBeVisible()
   await expect(actor).toBeFocused()
-  await expect.poll(() => horizontalScroll(actor)).toBe(castScroll)
+  await expect.poll(() => horizontalScroll(actor)).toBeGreaterThan(500)
+  await expect.poll(() => actor.evaluate(element => { const card = element.getBoundingClientRect(), rail = element.closest('.poster-row')!.getBoundingClientRect(); return card.left >= rail.left && card.right <= rail.right })).toBe(true)
 })
 
 test('trailer opens the returned iframe full-screen and Back restores the trailer action', async ({ page }) => {

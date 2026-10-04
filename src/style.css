@@ -130,7 +130,7 @@ button:focus-visible,input:focus-visible,summary:focus-visible,[tabindex]:focus-
 .detail-selectors .tv-select-trigger{border-radius:.3rem;min-height:2.7rem;background:#15191e;font-size:.87rem;border-color:#343a40}
 .detail-source-error{margin-top:1rem;color:#f7c9b7;font-size:.8rem}
 .detail-source-error button{margin-top:.5rem;font-size:.75rem}
-.detail-episodes{border-top:1px solid #2d3339;margin-top:1.6rem;padding-top:1.2rem}
+.detail-episodes{margin-top:1.6rem;padding-top:1.2rem}
 .detail-episodes-heading{display:flex;align-items:center;gap:1.7rem;margin-bottom:1rem}
 .detail-episodes-heading h2{font-size:1.5rem}
 .detail-episodes-heading .tv-select{min-width:8rem}
@@ -186,7 +186,7 @@ button:focus-visible,input:focus-visible,summary:focus-visible,[tabindex]:focus-
 .detail-rankings{display:flex;flex-wrap:wrap;gap:.45rem .55rem;margin:1rem 0 0;padding:0;list-style:none}
 .detail-rankings li{display:flex;align-items:center;gap:.45rem;min-width:0;max-width:100%;padding:.34rem .58rem;border:1px solid #303840;border-radius:.35rem;background:#171b20;color:#bac1c6;font-size:.7rem}
 .detail-rankings strong{color:var(--accent);font-variant-numeric:tabular-nums;white-space:nowrap}
-.detail-parts,.detail-people,.person-career{border-top:1px solid #2d3339;margin-top:1.8rem;padding-top:1.35rem}
+.detail-parts,.detail-people{margin-top:1.8rem;padding-top:1.35rem}.person-career{border-top:1px solid #2d3339;margin-top:1.8rem;padding-top:1.35rem}
 .part-row{grid-auto-columns:minmax(16rem,calc((100% - 2rem)/3));gap:1rem}
 .part-card{display:flex;align-items:center;gap:.9rem;min-height:4.7rem;padding:.8rem 1rem;border:1px solid #343a40;border-radius:.4rem;background:#181c20;text-align:left}
 .part-card:hover{background:#20262b}.part-card:focus-visible{outline:3px solid var(--accent);outline-offset:3px;background:#20262b}
@@ -195,10 +195,11 @@ button:focus-visible,input:focus-visible,summary:focus-visible,[tabindex]:focus-
 .part-copy{display:flex;flex:1;min-width:0;flex-direction:column;gap:.3rem}.part-copy strong{font-size:.86rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.part-copy small{font-size:.66rem;color:var(--muted)}
 .part-current{font-size:.58rem;letter-spacing:.08em;text-transform:uppercase;color:#aeca99}
 .detail-extra-heading{display:flex;align-items:end;justify-content:space-between;gap:1rem;margin-bottom:1rem}.detail-extra-heading h2{font-size:1.5rem}.detail-extra-heading .eyebrow{margin-bottom:.35rem}.detail-extra-heading .tv-select{width:10rem}.detail-extra-heading .tv-select-label{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
-.detail-schedule{border-top:1px solid #2d3339;margin-top:1.8rem;padding-top:1.35rem}
+.detail-schedule{margin-top:1.8rem;padding-top:1.35rem}
 .schedule-list{border-block:1px solid #30363c}
 .schedule-row{display:grid;grid-template-columns:5.8rem minmax(10rem,1fr) 9rem 7.5rem;align-items:center;gap:1rem;min-height:4rem;padding:.65rem .8rem;border-bottom:1px solid #2b3137}.schedule-row:last-child{border-bottom:0}.schedule-row.current{background:#1d251d}.schedule-row.upcoming{color:#c7cbd0}
 .schedule-number,.schedule-title{display:flex;min-width:0;flex-direction:column;gap:.2rem}.schedule-number b{font-size:1.25rem;color:#e8ebe8;font-variant-numeric:tabular-nums}.schedule-number small,.schedule-title small{font-size:.65rem;color:var(--muted)}.schedule-title strong{font-size:.82rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.schedule-date{font-size:.72rem;color:#c1c6ca}.schedule-state{justify-self:end;font-size:.66rem;text-align:right;color:#aeca99}.schedule-state.upcoming{color:#e7c891}
+.schedule-toggle{display:block;min-height:2.3rem;margin:.7rem auto 0;padding:.35rem .75rem;font-size:.72rem}
 .people-row{grid-auto-columns:calc((100% - 5rem)/6)}.person-card .poster-image{background:linear-gradient(145deg,#30383d,#1b2025)}
 .person-hero{display:grid;grid-template-columns:12rem minmax(0,1fr);align-items:start;gap:2rem;padding-bottom:1.8rem;border-bottom:1px solid #2d3339}
 .person-photo{position:relative;display:flex;align-items:center;justify-content:center;aspect-ratio:3/4;overflow:hidden;border-radius:.4rem;background:#22292e;color:#6d7a81;font-size:4.5rem}.person-photo img{position:relative;z-index:1;width:100%;height:100%;object-fit:cover}.person-photo>span{position:absolute}
