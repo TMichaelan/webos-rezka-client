@@ -30,6 +30,12 @@ function contentUrl(value, mirror, fromServer = false) {
   if (url.origin !== new URL(mirror).origin || url.username || url.password || !/^\/(films|series|cartoons|animation)\/(?:[a-z0-9-]+\/)*\d+-[^/]+\.html$/i.test(url.pathname) || (!fromServer && (url.search || url.hash))) throw fail('INVALID_INPUT', 'Допустима только ссылка на фильм текущего зеркала.');
   return url.origin + url.pathname;
 }
+function personUrl(value, mirror, fromServer = false) {
+  let url;
+  try { url = new URL(value, mirror); } catch { throw fail('INVALID_INPUT', 'Некорректная ссылка на персону.'); }
+  if (url.origin !== new URL(mirror).origin || url.username || url.password || !/^\/person\/[1-9]\d*-[a-z0-9-]+\/$/i.test(url.pathname) || (!fromServer && (url.search || url.hash))) throw fail('INVALID_INPUT', 'Допустима только ссылка на персону текущего зеркала.');
+  return url.origin + url.pathname;
+}
 function parseAccount(html, mirror) {
   const root = siteDocument(html);
   const id = attr(root.querySelector('#member_user_id'), 'value');
@@ -71,22 +77,23 @@ function seriesStatus(value) {
   if (/(?:^|[(,;·])\s*(?:(?:сериал|проект)\s+)?заверш[её]н(?:\s*\(все серии\))?\s*(?:$|[),;·])/i.test(value)) return 'Завершён';
   if (/(?:19|20)\d{2}\s*[-–—]\s*(?:\.{3}|…)/.test(value)) return 'Выходит';
 }
+function parseContentCard(node, mirror) {
+  const link = node.querySelector('.b-content__inline_item-link a');
+  const url = contentUrl(attr(link, 'href') || attr(node, 'data-url'), mirror, true);
+  const id = attr(node, 'data-id') || url.match(/\/(\d+)-[^/]+\.html$/)[1];
+  const title = clean(link);
+  if (!numeric(id) || !title) throw fail('UNSUPPORTED_PROTOCOL', 'Неполная карточка каталога.');
+  const poster = node.querySelector('.b-content__inline_item-cover img');
+  const category = attr(node.querySelector('.cat'), 'class') || '';
+  const meta = clean(node.querySelector('.b-content__inline_item-link div'));
+  const type = /series|serial|tv_series/.test(category) || url.includes('/series/') ? 'series' : 'movie';
+  const status = type === 'series' && (seriesStatus(clean(node.querySelector('.b-content__inline_item-cover .info'))) || seriesStatus(meta));
+  return { id, url, title, poster: mediaUrl(attr(poster, 'data-src') || attr(poster, 'src'), mirror), meta, type, ...(status ? { status } : {}) };
+}
 function parsePage(html, mirror, page) {
   const root = siteDocument(html);
   if (!root.querySelector('.b-content__inline_items, #user-favorites-holder, .b-favorites_content')) throw fail('UNSUPPORTED_PROTOCOL', 'Не удалось распознать список каталога.');
-  const items = (root.querySelector('.b-content__inline_items') || root).querySelectorAll('.b-content__inline_item').map(node => {
-    const link = node.querySelector('.b-content__inline_item-link a');
-    const url = contentUrl(attr(link, 'href') || attr(node, 'data-url'), mirror, true);
-    const id = attr(node, 'data-id') || url.match(/\/(\d+)-[^/]+\.html$/)[1];
-    const title = clean(link);
-    if (!numeric(id) || !title) throw fail('UNSUPPORTED_PROTOCOL', 'Неполная карточка каталога.');
-    const poster = node.querySelector('.b-content__inline_item-cover img');
-    const category = attr(node.querySelector('.cat'), 'class') || '';
-    const meta = clean(node.querySelector('.b-content__inline_item-link div'));
-    const type = /series|serial|tv_series/.test(category) || url.includes('/series/') ? 'series' : 'movie';
-    const status = type === 'series' && (seriesStatus(clean(node.querySelector('.b-content__inline_item-cover .info'))) || seriesStatus(meta));
-    return { id, url, title, poster: mediaUrl(attr(poster, 'data-src') || attr(poster, 'src'), mirror), meta, type, ...(status ? { status } : {}) };
-  });
+  const items = (root.querySelector('.b-content__inline_items') || root).querySelectorAll('.b-content__inline_item').map(node => parseContentCard(node, mirror));
   return { items, page, hasMore: hasMore(root, page, items.length) };
 }
 function parseEpisodes(html) {
@@ -103,14 +110,32 @@ function parseEpisodes(html) {
     return { season, episode, title: clean(node) };
   }).filter(item => { const key = `${item.season}:${item.episode}`; if (seen.has(key)) return false; seen.add(key); return true; });
 }
+function scanSchedule(root) {
+  const episodes = [];
+  for (const row of root.querySelectorAll('.b-post__schedule_block tr, .b-post__schedule_table tr')) {
+    if (episodes.length >= 1000) break;
+    const identity = row.querySelector('.td-1[data-id]');
+    const control = row.querySelector('.td-3 .watch-episode-action, .watch-episode-action');
+    const rowId = attr(identity, 'data-id');
+    const watchId = attr(control, 'data-id') || rowId;
+    const match = clean(identity || row.querySelector('td')).match(/(\d+)\s*сезон\s*(\d+)\s*сери/i);
+    if (!match || (identity ? !numeric(rowId) : !numeric(watchId))) continue;
+    const season = Number(match[1]), episode = Number(match[2]);
+    if (!Number.isSafeInteger(season) || season < 1 || !Number.isSafeInteger(episode) || episode < 0) continue;
+    const title = clean(row.querySelector('.td-2 b')) || undefined;
+    const originalTitle = clean(row.querySelector('.td-2 span')) || undefined;
+    const airDate = clean(row.querySelector('.td-4')) || undefined;
+    const relative = clean(row.querySelector('.td-5')) || undefined;
+    episodes.push({
+      season, episode, title, originalTitle, airDate, relative,
+      state: control ? 'aired' : 'upcoming', current: row.classList.contains('current-episode') || undefined,
+      watched: control ? control.classList.contains('watched') : undefined, watchId,
+    });
+  }
+  return episodes;
+}
 function parseWatched(html) {
-  const root = document(html);
-  return root.querySelectorAll('.b-post__schedule_table tr').flatMap(row => {
-    const match = clean(row.querySelector('td')).match(/(\d+)\s*сезон\s*(\d+)\s*сери/i);
-    const control = row.querySelector('.watch-episode-action');
-    const watchId = attr(control, 'data-id');
-    return match && numeric(watchId) ? [{ season: Number(match[1]), episode: Number(match[2]), watched: control.classList.contains('watched'), watchId }] : [];
-  });
+  return scanSchedule(document(html)).flatMap(({ season, episode, watched, watchId }) => typeof watched === 'boolean' && numeric(watchId) ? [{ season, episode, watched, watchId }] : []);
 }
 function applyWatched(episodes, html) {
   const watched = parseWatched(html);
@@ -139,6 +164,80 @@ function parseRating(node, scoreSelector, source) {
   const votes = (rest.match(/\((\d[\d ]*)\)/) || rest.match(/^(\d[\d ]*)(?=\s*(?:оценок|голосов|votes?|$))/i))?.[1]?.trim();
   return { source, score, ...(votes ? { votes } : {}) };
 }
+function optionalSiteUrl(value, mirror) {
+  if (typeof value !== 'string' || !value.trim()) return;
+  try {
+    const url = new URL(value, mirror);
+    if (url.origin !== new URL(mirror).origin || url.username || url.password) return;
+    return url.origin + url.pathname + url.search;
+  } catch { return; }
+}
+function parsePeople(root, mirror) {
+  const people = [];
+  for (const node of root.querySelectorAll('.person-name-item')) {
+    if (people.length >= 20) break;
+    const role = attr(node, 'itemprop');
+    if (role !== 'director' && role !== 'actor') continue;
+    try {
+      const link = node.querySelector('a[itemprop="url"]');
+      const url = personUrl(attr(link, 'href'), mirror, true);
+      const id = attr(node, 'data-id');
+      const urlId = url.match(/\/person\/(\d+)-/)[1];
+      const name = clean(link?.querySelector('[itemprop="name"]'));
+      if (!numeric(id) || id !== urlId || !name) continue;
+      const rawPhoto = attr(node, 'data-photo');
+      const photo = rawPhoto && rawPhoto !== 'null' ? mediaUrl(rawPhoto, mirror) : undefined;
+      people.push({ role, person: { id, name, url, ...(photo ? { photo } : {}) } });
+    } catch { /* Supplementary people must not invalidate core details. */ }
+  }
+  return {
+    directors: people.filter(item => item.role === 'director').map(item => item.person),
+    actors: people.filter(item => item.role === 'actor').map(item => item.person),
+  };
+}
+function parseParts(root, current) {
+  const parts = [];
+  for (const node of root.querySelectorAll('.b-post__partcontent_item')) {
+    if (parts.length >= 100) break;
+    try {
+      const number = clean(node.querySelector('.td.num')).match(/^(\d+)\.?$/)?.[1];
+      const order = Number(number);
+      const titleCell = node.querySelector('.td.title');
+      const link = titleCell?.querySelector('a');
+      const title = clean(link || titleCell);
+      if (!Number.isSafeInteger(order) || order < 1 || !title) continue;
+      const isCurrent = node.classList.contains('current') || !!node.querySelector('.current');
+      let id = current.id, url = current.url, type = current.type;
+      if (!isCurrent) {
+        url = contentUrl(attr(node, 'data-url') || attr(titleCell, 'data-url') || attr(link, 'href'), current.mirror, true);
+        id = url.match(/\/(\d+)-[^/]+\.html$/)[1];
+        type = url.includes('/series/') ? 'series' : 'movie';
+      }
+      const year = clean(node.querySelector('.td.year')) || undefined;
+      const rating = clean(node.querySelector('.td.rating i')) || undefined;
+      parts.push({ id, url, title, type, order, ...(isCurrent ? { current: true } : {}), ...(year ? { year } : {}), ...(rating ? { rating } : {}) });
+    } catch { /* Supplementary franchise data is optional. */ }
+  }
+  return parts;
+}
+function rankingPlace(link) {
+  const own = clean(link).match(/\((\d+)\s*место\)/i)?.[1];
+  if (own) return Number(own);
+  let text = '';
+  for (let node = link.nextSibling; node && node.tagName !== 'A'; node = node.nextSibling) text += ` ${clean(node)}`;
+  const match = text.match(/\((\d+)\s*место\)/i);
+  return match ? Number(match[1]) : undefined;
+}
+function parseRankings(field, mirror) {
+  if (!field) return [];
+  return field.querySelectorAll('a').slice(0, 20).flatMap(link => {
+    const name = clean(link).replace(/\s*\(\d+\s*место\)\s*$/i, '');
+    if (!name) return [];
+    const place = rankingPlace(link);
+    const url = optionalSiteUrl(attr(link, 'href'), mirror);
+    return [{ name, ...(place === undefined ? {} : { place }), ...(url ? { url } : {}) }];
+  });
+}
 function parseDetails(html, url, mirror) {
   const root = siteDocument(html);
   const id = attr(root.querySelector('#post_id'), 'value') || attr(root.querySelector('#user-favorites-holder, .b-userset__fav_holder_data'), 'data-post_id');
@@ -164,7 +263,84 @@ function parseDetails(html, url, mirror) {
     parseRating(root.querySelector('.b-post__info_rates.wa'), '.bold', 'World Art'),
     parseRating(root.querySelector('.b-post__rating'), '.num', 'HDRezka'),
   ].filter(Boolean);
-  return { id, url: contentUrl(url, mirror), title, type: attr(root.querySelector('meta[property="og:type"]'), 'content') === 'video.tv_series' || init?.[1] === 'Series' ? 'series' : 'movie', poster: mediaUrl(attr(poster, 'src'), mirror), description: clean(root.querySelector('.b-post__description_text')), translators, selectedTranslatorId, episodes: applyWatched(parseEpisodes(html), html), year: (clean(fields['Год'] || fields['Дата выхода']).match(/\b(?:19|20)\d{2}\b/) || [])[0], genres: fields['Жанр']?.querySelectorAll('a').map(clean), duration: clean(fields['Время']) || undefined, originalTitle: clean(root.querySelector('.b-post__origtitle')) || undefined, releaseDate, countries: countries?.length ? countries : undefined, ageRating: clean(fields['Возраст']) || undefined, ratings: ratings.length ? ratings : undefined };
+  const canonicalUrl = contentUrl(url, mirror);
+  const type = attr(root.querySelector('meta[property="og:type"]'), 'content') === 'video.tv_series' || init?.[1] === 'Series' ? 'series' : 'movie';
+  const people = parsePeople(root, mirror);
+  const schedule = scanSchedule(root).map(({ watchId: _watchId, ...episode }) => Object.fromEntries(Object.entries(episode).filter(([, value]) => value !== undefined)));
+  const franchiseTitle = clean(root.querySelector('.b-post__franchise_link_title')) || undefined;
+  const parts = parseParts(root, { id, url: canonicalUrl, title, type, mirror });
+  const rankings = parseRankings(fields['Входит в списки'], mirror);
+  const trailerAvailable = root.querySelectorAll('.b-sidelinks__link.show-trailer').some(node => attr(node, 'data-id') === id) || undefined;
+  return {
+    id, url: canonicalUrl, title, type, poster: mediaUrl(attr(poster, 'src'), mirror),
+    description: clean(root.querySelector('.b-post__description_text')), translators, selectedTranslatorId,
+    episodes: applyWatched(parseEpisodes(html), html), year: (clean(fields['Год'] || fields['Дата выхода']).match(/\b(?:19|20)\d{2}\b/) || [])[0],
+    genres: fields['Жанр']?.querySelectorAll('a').map(clean), duration: clean(fields['Время']) || undefined,
+    originalTitle: clean(root.querySelector('.b-post__origtitle')) || undefined, releaseDate,
+    countries: countries?.length ? countries : undefined, ageRating: clean(fields['Возраст']) || undefined,
+    ratings: ratings.length ? ratings : undefined,
+    ...(people.directors.length ? { directors: people.directors } : {}),
+    ...(people.actors.length ? { actors: people.actors } : {}),
+    ...(schedule.length ? { schedule } : {}),
+    ...(franchiseTitle ? { franchiseTitle } : {}),
+    ...(parts.length ? { parts } : {}),
+    ...(rankings.length ? { rankings } : {}),
+    ...(trailerAvailable ? { trailerAvailable } : {}),
+  };
+}
+function parsePerson(html, url, mirror) {
+  const root = siteDocument(html);
+  const person = root.querySelector('.b-post.b-person');
+  const canonicalUrl = personUrl(url, mirror);
+  const id = canonicalUrl.match(/\/person\/(\d+)-/)[1];
+  const name = clean(person?.querySelector('.b-post__title .t1'));
+  if (!person || !name) throw fail('UNSUPPORTED_PROTOCOL', 'Не удалось распознать страницу персоны.');
+  const originalName = clean(person.querySelector('.b-post__title .t2')) || undefined;
+  const image = person.querySelector('.b-sidecover img');
+  const photo = mediaUrl(attr(image, 'data-src') || attr(image, 'src'), mirror);
+  const facts = person.querySelectorAll('.b-post__info tr').slice(0, 32).flatMap(row => {
+    const cells = row.querySelectorAll('td');
+    const label = clean(cells[0]).replace(/:$/, '');
+    const value = clean(cells[1]);
+    return label && value ? [{ label, value }] : [];
+  });
+  let total = 0;
+  const careers = person.querySelectorAll('.b-person__career').slice(0, 20).flatMap(group => {
+    const role = clean(group.querySelector('h2'));
+    if (!role) return [];
+    const items = [];
+    for (const node of group.querySelectorAll('.b-content__inline_item')) {
+      if (total >= 500) break;
+      try { items.push(parseContentCard(node, mirror)); total++; } catch { /* Skip malformed optional cards. */ }
+    }
+    const summary = clean(group.querySelector('.b-person__career_stats')) || undefined;
+    return [{ role, ...(summary ? { summary } : {}), items }];
+  });
+  return { id, name, ...(originalName ? { originalName } : {}), url: canonicalUrl, ...(photo ? { photo } : {}), ...(facts.length ? { facts } : {}), careers };
+}
+function youtubeSearch(params) {
+  const safe = new URLSearchParams();
+  const binary = new Set(['autoplay', 'cc_load_policy', 'controls', 'disablekb', 'enablejsapi', 'fs', 'loop', 'modestbranding', 'mute', 'playsinline', 'rel']);
+  let count = 0;
+  for (const [key, value] of params) {
+    if (count++ >= 32) break;
+    if ((binary.has(key) && /^[01]$/.test(value)) || (/^(?:start|end)$/.test(key) && /^\d{1,8}$/.test(value)) || (/^(?:hl|cc_lang_pref)$/.test(key) && /^[A-Za-z-]{2,16}$/.test(value)) || (key === 'si' && /^[A-Za-z0-9_-]{1,128}$/.test(value))) safe.set(key, value);
+  }
+  safe.set('autoplay', '1');
+  const query = safe.toString();
+  return query ? `?${query}` : '';
+}
+function parseTrailer(code) {
+  const root = document(code);
+  for (const iframe of root.querySelectorAll('iframe[src]').slice(0, 16)) {
+    try {
+      const url = new URL(attr(iframe, 'src'));
+      if (url.protocol !== 'https:' || url.port || url.username || url.password || !['www.youtube.com', 'www.youtube-nocookie.com'].includes(url.hostname) || !/^\/embed\/[A-Za-z0-9_-]{11}$/.test(url.pathname)) continue;
+      url.searchParams.set('autoplay', '1');
+      return { url: url.origin + url.pathname + youtubeSearch(url.searchParams) };
+    } catch { /* Try the next iframe. */ }
+  }
+  throw fail('UNSUPPORTED_PROTOCOL', 'Сервер предоставил недопустимую ссылку на трейлер.');
 }
 // Stream deobfuscation adapted from ndenissov/HDRezka, Copyright (c) 2023-2025 Nikita Denissov (MIT).
 // Full license is retained below.
@@ -237,7 +413,7 @@ function parseContinue(html, mirror) {
     return { id, url, title: clean(link), poster: mediaUrl(attr(link, 'data-cover_url'), mirror), meta: meta || undefined, type, ...(status ? { status } : {}), progress: { id, url, position: null, completed: node.classList.contains('watched-row'), ...(selection ? { translatorId: selection[1], season: Number(selection[2]), episode: Number(selection[3]) } : episode ? { season: Number(episode[1]), episode: Number(episode[2]) } : {}), ...(numeric(saveId) ? { saveId } : {}) } };
   });
 }
-module.exports = { fail, document, siteDocument, contentUrl, parseAccount, parseAccountName, parsePage, parseDetails, parseEpisodes, parseWatched, applyWatched, translatorSelection, parseStreams, subtitleText, parseBookmarkLists, parseContinue };
+module.exports = { fail, document, siteDocument, contentUrl, personUrl, parseAccount, parseAccountName, parsePage, parseDetails, parsePerson, parseTrailer, parseEpisodes, parseWatched, applyWatched, translatorSelection, parseStreams, subtitleText, parseBookmarkLists, parseContinue };
 
 /*
 MIT License — ndenissov/HDRezka

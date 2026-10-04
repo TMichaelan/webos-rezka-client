@@ -265,6 +265,20 @@ function createProvider({ transport, progressFile, lookup = dnsLookup }) {
         }
         return details;
       }
+      case 'person': {
+        const url = p.personUrl(params.url, transport.mirror);
+        return p.parsePerson(await request(new URL(url).pathname), url, transport.mirror);
+      }
+      case 'trailer': {
+        const postId = id(params.id);
+        const url = p.contentUrl(params.url, transport.mirror);
+        const pathname = new URL(url).pathname;
+        if (pathname.match(/\/(\d+)-[^/]+\.html$/)?.[1] !== postId) throw p.fail('INVALID_INPUT', 'Фильм не соответствует ссылке.');
+        const details = p.parseDetails(await request(pathname), url, transport.mirror);
+        if (details.id !== postId || !details.trailerAvailable) throw p.fail('INVALID_INPUT', 'Трейлер недоступен.');
+        const data = await json('/engine/ajax/gettrailervideo.php', { id: postId }, url);
+        return p.parseTrailer(data.code);
+      }
       case 'streams': {
         const context = sessionContext();
         const postId = id(params.id); const translatorId = params.translatorId;

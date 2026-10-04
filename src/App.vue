@@ -9,14 +9,15 @@ import iconUrl from '../webos/large-icon.png';
 import VideoPlayer from './components/VideoPlayer.vue';
 import TvSelect from './components/TvSelect.vue';
 import AppIcon from './components/AppIcon.vue';
-import type { BookmarkList, Content, ContinueItem, Details, Episode, Methods, Page, PlaybackSource, Preferences, SaveProgress, Status } from './types';
+import type { BookmarkList, Content, ContinueItem, Details, Episode, Methods, Page, PersonDetails, PersonSummary, PlaybackSource, Preferences, SaveProgress, Status } from './types';
 
-type Route = { name: 'home' | 'search' | 'catalog' | 'details' | 'bookmarks' | 'profile'; title: string; category?: string; url?: string };
+type Route = { name: 'home' | 'search' | 'catalog' | 'details' | 'person' | 'bookmarks' | 'profile'; title: string; category?: string; url?: string };
 type Shelf = { id: 'continue' | 'bookmarks' | 'new' | 'popular'; title: string; subtitle: string; items: (Content | ContinueItem)[]; loading: boolean; error: string };
+type RouteSnapshot = { focus: string; scroll: number; rows: number[]; detail?: { summary?: Content; season: number; episode?: number; scheduleSeason?: number } };
 const route = ref<Route>({ name: 'home', title: 'Главная' });
 const history: Route[] = [];
 const routeKey = (value: Route, listId = selectedList.value) => `${value.name}:${value.name === 'bookmarks' ? listId : value.category || value.url || ''}`;
-const snapshots = new Map<string, { focus: string; scroll: number; rows: number[] }>();
+const snapshots = new Map<string, RouteSnapshot>();
 const cache = new Map<string, Page>();
 const shelfRequests = new Map<Shelf['id'], number>();
 const scroller = ref<HTMLElement>();
@@ -57,6 +58,7 @@ const lists = ref<BookmarkList[]>([]);
 const selectedList = ref('');
 const listsError = ref('');
 const details = ref<Details>();
+const person = ref<PersonDetails>();
 const detailSummary = ref<Content>();
 const detailBookmarked = ref<boolean>();
 const confirmedBookmarks = reactive(new Set<string>());
@@ -86,10 +88,13 @@ const detailFacts = computed(() => {
 const translator = ref('');
 const selectedSeason = ref(1);
 const selectedEpisode = ref<number | undefined>();
+const selectedScheduleSeason = ref<number>();
 let requestedContinue: ContinueItem['progress'] | undefined;
 const seasons = computed(() => [...new Set(details.value?.episodes.map(item => item.season) || [])]);
 const episodes = computed(() => details.value?.episodes.filter(item => item.season === selectedSeason.value) || []);
 const chosenEpisode = computed(() => episodes.value.find(item => item.episode === selectedEpisode.value));
+const scheduleSeasons = computed(() => [...new Set(details.value?.schedule?.map(item => item.season) || [])]);
+const scheduleEpisodes = computed(() => details.value?.schedule?.filter(item => item.season === selectedScheduleSeason.value) || []);
 const preparedSource = ref<PlaybackSource>();
 const playbackSource = ref<PlaybackSource>();
 const sourceError = ref('');
@@ -113,6 +118,14 @@ const modalBusy = ref(false);
 const modalError = ref('');
 let modalToken = 0;
 let modalOrigin: HTMLElement | null = null;
+const trailerOpen = ref(false);
+const trailerLoading = ref(false);
+const trailerUrl = ref('');
+const trailerStarted = ref(false);
+const trailerError = ref('');
+let trailerToken = 0;
+let trailerOrigin: HTMLElement | null = null;
+let trailerController = new AbortController();
 const playerOpen = ref(false);
 const playerRef = ref<InstanceType<typeof VideoPlayer>>();
 const preferences = reactive<Preferences>(readPreferences());
@@ -234,13 +247,14 @@ async function applyStatus(value: Status) {
     const publicOrigin = status.value?.mirror === value.mirror && route.value.name === 'profile' ? [...history].reverse().find(item => item.name !== 'profile' && item.name !== 'bookmarks') : undefined;
     cache.clear(); snapshots.clear(); history.length = 0;
     if (publicOrigin) history.push(publicOrigin);
-    cards.value = []; lists.value = []; selectedList.value = ''; details.value = undefined; detailSummary.value = undefined; requestedContinue = undefined;
-    translator.value = ''; selectedSeason.value = 1; selectedEpisode.value = undefined;
+    cards.value = []; lists.value = []; selectedList.value = ''; details.value = undefined; person.value = undefined; detailSummary.value = undefined; requestedContinue = undefined;
+    translator.value = ''; selectedSeason.value = 1; selectedEpisode.value = undefined; selectedScheduleSeason.value = undefined;
     query.value = ''; searchedQuery.value = ''; page.value = 1; hasMore.value = false; loadMoreFailed.value = false;
     loading.value = false; screenError.value = ''; listsError.value = ''; detailBookmarked.value = undefined; confirmedBookmarks.clear(); bookmarksComplete.value = false;
     watchedPending.clear(); watchedDesired.clear(); watchedFailures.clear(); watchedNote.value = '';
     episodeRetry = undefined; episodeSyncError.value = '';
     modalToken++; modal.value = null; modalOrigin = null; modalError.value = ''; modalBusy.value = false;
+    trailerToken++; trailerController.abort(); trailerOpen.value = false; trailerLoading.value = false; trailerUrl.value = ''; trailerStarted.value = false; trailerError.value = ''; trailerOrigin = null;
     shelves.forEach(shelf => { shelf.items = []; shelf.error = ''; shelf.loading = false; });
     if (route.value.name !== 'profile') route.value = { name: 'home', title: 'Главная' };
     // Unmount the old player and settle its in-flight write before switching queues.
@@ -288,7 +302,11 @@ async function configure() {
   finally { settingsBusy.value = false; }
 }
 function capture() {
-  snapshots.set(routeKey(route.value), { focus: (document.activeElement as HTMLElement)?.dataset.navId || '', scroll: scroller.value?.scrollTop || 0, rows: [...(scroller.value?.querySelectorAll<HTMLElement>('.poster-row') || [])].map(row => row.scrollLeft) });
+  snapshots.set(routeKey(route.value), {
+    focus: (document.activeElement as HTMLElement)?.dataset.navId || '', scroll: scroller.value?.scrollTop || 0,
+    rows: [...(scroller.value?.querySelectorAll<HTMLElement>('.poster-row') || [])].map(row => row.scrollLeft),
+    ...(route.value.name === 'details' ? { detail: { summary: detailSummary.value ? { ...detailSummary.value } : undefined, season: selectedSeason.value, episode: selectedEpisode.value, scheduleSeason: selectedScheduleSeason.value } } : {}),
+  });
 }
 async function restoreFocus() {
   await nextTick();
@@ -301,14 +319,14 @@ async function restoreFocus() {
   if (target) target.focus({ preventScroll: true }); else if (!playerOpen.value && !modal.value) focusFirst(scroller.value || document);
   return !!target;
 }
-async function navigate(target: Route, push = true) {
+async function navigate(target: Route, push = true, captured = false) {
   if (initializing.value || bootstrapError.value) return;
   if (routeKey(route.value) === routeKey(target) && target.name !== 'details') {
     snapshots.delete(routeKey(target));
     scroller.value?.scrollTo({ top: 0, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' });
     await nextTick(); focusFirst(scroller.value || document); return;
   }
-  capture();
+  if (!captured) capture();
   if (push) { history.push({ ...route.value }); snapshots.delete(routeKey(target)); }
   route.value = target; screenError.value = '';
   if (push) { await nextTick(); if (scroller.value) scroller.value.scrollTop = 0; }
@@ -328,7 +346,16 @@ async function loadRoute(restoreAtStart = false) {
   loading.value = false; loadMoreFailed.value = false;
   if (route.value.name === 'home') { if (restoreAtStart) restoredTarget = await restoreFocus(); await Promise.all(visibleShelves.value.map(shelf => loadShelf(shelf, version))); }
   else if (route.value.name === 'profile') { if (restoreAtStart) restoredTarget = await restoreFocus(); await refreshAccount(version); }
-  else if (route.value.name === 'details') { if (restoreAtStart) restoredTarget = await restoreFocus(); await loadDetails(version); }
+  else if (route.value.name === 'details') {
+    const saved = restoreAtStart ? snapshots.get(routeKey(route.value))?.detail : undefined;
+    if (saved) {
+      detailSummary.value = saved.summary ? { ...saved.summary } : undefined;
+      selectedSeason.value = saved.season; selectedEpisode.value = saved.episode; selectedScheduleSeason.value = saved.scheduleSeason;
+    }
+    if (restoreAtStart) restoredTarget = await restoreFocus();
+    await loadDetails(version, undefined, !!saved);
+  }
+  else if (route.value.name === 'person') { if (restoreAtStart) restoredTarget = await restoreFocus(); await loadPerson(version); }
   else if (route.value.name === 'catalog' || route.value.name === 'bookmarks') {
     const cached = cache.get(routeKey(route.value));
     cards.value = cached?.items || []; page.value = cached?.page || 1; hasMore.value = cached?.hasMore || false;
@@ -456,14 +483,29 @@ async function loadLists() {
   try { const result = await api.call('bookmarkLists', {}, { signal }); if (version === accountVersion && !signal.aborted) lists.value = result; }
   catch (error) { if (version === accountVersion && !signal.aborted) listsError.value = message(error); }
 }
+async function openPerson(item: PersonSummary) {
+  person.value = undefined;
+  await navigate({ name: 'person', title: item.name, url: item.url });
+}
+async function loadPerson(version = requestVersion) {
+  if (person.value?.url === route.value.url) { loading.value = false; return; }
+  loading.value = true; screenError.value = '';
+  try {
+    const value = await api.call('person', { url: route.value.url! }, { signal: screenController.signal });
+    if (version === requestVersion) person.value = value;
+  } catch (error) { if (version === requestVersion && !screenController.signal.aborted) screenError.value = message(error); }
+  finally { if (version === requestVersion) loading.value = false; }
+}
 async function openContent(item: Content | ContinueItem) {
+  capture();
   requestedContinue = 'progress' in item ? item.progress : undefined;
   detailSummary.value = { id: item.id, url: item.url, title: item.title, type: item.type, meta: item.meta, status: item.status };
   const bookmarked = route.value.name === 'bookmarks' || confirmedBookmarks.has(item.id) || !!shelves.find(shelf => shelf.id === 'bookmarks')?.items.some(bookmark => bookmark.id === item.id);
   detailBookmarked.value = bookmarked ? true : bookmarksComplete.value ? false : undefined;
   details.value = undefined;
+  selectedScheduleSeason.value = undefined;
   descriptionExpanded.value = false;
-  await navigate({ name: 'details', title: item.title, url: item.url });
+  await navigate({ name: 'details', title: item.title, url: item.url }, true, true);
 }
 async function loadDetails(version = requestVersion, requestedTranslator?: string, preserveEpisode = false) {
   loading.value = true; screenError.value = '';
@@ -477,6 +519,7 @@ async function loadDetails(version = requestVersion, requestedTranslator?: strin
     const wanted = preserveEpisode ? { season: selectedSeason.value, episode: selectedEpisode.value } : requestedContinue;
     const selected = value.episodes.find(item => item.season === wanted?.season && item.episode === wanted?.episode) || value.episodes.find(item => !item.watched) || value.episodes[0];
     selectedSeason.value = selected?.season || 1; selectedEpisode.value = selected?.episode;
+    if (!value.schedule?.some(item => item.season === selectedScheduleSeason.value)) selectedScheduleSeason.value = value.schedule?.[0]?.season;
   } catch (error) { if (version === requestVersion && !screenController.signal.aborted) screenError.value = message(error); }
   finally { if (version === requestVersion) loading.value = false; }
 }
@@ -525,6 +568,11 @@ function focusWatch(event: KeyboardEvent) {
   if (!target) return;
   event.preventDefault(); event.stopPropagation(); target.focus({ preventScroll: true });
 }
+function focusSchedule(event: KeyboardEvent) {
+  const target = (event.currentTarget as HTMLElement).closest('.title-detail')?.querySelector<HTMLButtonElement>('.detail-schedule [role="combobox"]:not(:disabled)');
+  if (!target) return;
+  event.preventDefault(); event.stopPropagation(); target.focus({ preventScroll: true });
+}
 async function changeTranslator() { updatePreferences({ ...preferences, translatorId: translator.value }); await loadDetails(beginRequest(), translator.value, true); }
 function changeSeason() { selectedEpisode.value = episodes.value[0]?.episode; }
 async function prepareSource(force = false): Promise<PlaybackSource | undefined> {
@@ -547,13 +595,13 @@ async function prepareSource(force = false): Promise<PlaybackSource | undefined>
 }
 watch(() => route.value.name === 'details' && !loading.value && !playerOpen.value ? selectionKey.value : '', key => { if (key) void prepareSource(); });
 async function play() {
-  if (!details.value || !selectionKey.value || playStarting.value) return;
+  if (!details.value || !selectionKey.value || playStarting.value || trailerOpen.value) return;
   const key = selectionKey.value;
   const dialogVersion = modalToken;
   capture(); playStarting.value = true;
   try {
     const source = await prepareSource(!!sourceError.value);
-    if (!source || key !== selectionKey.value || route.value.name !== 'details' || dialogVersion !== modalToken) return;
+    if (!source || key !== selectionKey.value || route.value.name !== 'details' || dialogVersion !== modalToken || trailerOpen.value) return;
     playbackSource.value = source;
     updatePreferences({ ...preferences, translatorId: translator.value }); playerOpen.value = true;
   } finally { playStarting.value = false; }
@@ -564,6 +612,33 @@ function updatePlaybackSelection(value: { details: Details; translatorId: string
   requestedContinue = undefined;
 }
 async function closePlayer() { sourceKey = ''; playbackSource.value = undefined; playerOpen.value = false; await restoreFocus(); }
+async function openTrailer() {
+  if (!details.value?.trailerAvailable || trailerOpen.value || playStarting.value || playerOpen.value) return;
+  const selected = details.value;
+  const token = ++trailerToken;
+  trailerController.abort(); trailerController = new AbortController();
+  trailerOrigin = document.activeElement as HTMLElement;
+  trailerOpen.value = true; trailerLoading.value = true; trailerUrl.value = ''; trailerStarted.value = false; trailerError.value = '';
+  await nextTick(); focusFirst(document.querySelector('.trailer-backdrop') || document);
+  try {
+    const result = await api.call('trailer', { id: selected.id, url: selected.url }, { signal: trailerController.signal });
+    if (token === trailerToken && trailerOpen.value) {
+      trailerUrl.value = result.url;
+      await nextTick(); document.querySelector<HTMLButtonElement>('[data-nav-id="trailer-start"]')?.focus({ preventScroll: true });
+    }
+  } catch (error) {
+    if (token === trailerToken && trailerOpen.value && !trailerController.signal.aborted) trailerError.value = message(error);
+  } finally { if (token === trailerToken) trailerLoading.value = false; }
+}
+async function startTrailer() {
+  if (!trailerOpen.value || !trailerUrl.value || trailerStarted.value) return;
+  trailerStarted.value = true;
+  await nextTick(); document.querySelector<HTMLButtonElement>('[data-nav-id="trailer-close"]')?.focus({ preventScroll: true });
+}
+async function closeTrailer() {
+  trailerToken++; trailerController.abort(); trailerOpen.value = false; trailerLoading.value = false; trailerUrl.value = ''; trailerStarted.value = false; trailerError.value = '';
+  await nextTick(); trailerOrigin?.focus({ preventScroll: true });
+}
 async function openModal(value: typeof modal.value) {
   const token = ++modalToken;
   modalOrigin = document.activeElement as HTMLElement; modal.value = value; modalError.value = '';
@@ -608,6 +683,7 @@ async function logout() {
 function discardSaves() { recovered.value = false; saves?.clear(); void closeModal(); }
 function back() {
   if (initializing.value || bootstrapError.value) { platformBack(); return; }
+  if (trailerOpen.value) { void closeTrailer(); return; }
   if (modal.value) { void closeModal(); return; }
   if (playerOpen.value) { playerRef.value?.requestBack(); return; }
   const previous = history.pop();
@@ -616,7 +692,7 @@ function back() {
   if (!platformBack()) document.querySelector<HTMLElement>('[data-nav-id="nav-home"]')?.focus();
 }
 function refreshHomeOnVisible() {
-  if (document.hidden || !status.value?.account || route.value.name !== 'home' || playerOpen.value || modal.value) return;
+  if (document.hidden || !status.value?.account || route.value.name !== 'home' || playerOpen.value || modal.value || trailerOpen.value) return;
   for (const shelf of shelves) if (shelf.id === 'continue' || shelf.id === 'bookmarks') void loadShelf(shelf);
 }
 onMounted(() => {
@@ -626,14 +702,14 @@ onMounted(() => {
 onBeforeUnmount(() => {
   api.onAuthRequired = undefined;
   for (const event of ['keydown', 'pointerdown', 'wheel']) document.removeEventListener(event, recordInput, true);
-  removeNavigation?.(); document.removeEventListener('visibilitychange', refreshHomeOnVisible); screenController.abort(); sourceController.abort(); if (searchTimer) clearTimeout(searchTimer); if (retryTimer) clearTimeout(retryTimer);
+  removeNavigation?.(); document.removeEventListener('visibilitychange', refreshHomeOnVisible); screenController.abort(); sourceController.abort(); trailerController.abort(); if (searchTimer) clearTimeout(searchTimer); if (retryTimer) clearTimeout(retryTimer);
 });
 </script>
 <template>
   <div v-if="api.mode === 'fixture'" class="fixture-banner" role="status">ТЕСТОВЫЙ РЕЖИМ · демонстрационные данные · реальный аккаунт не используется</div>
   <SkeletonView v-if="initializing" kind="boot" />
   <main v-else-if="bootstrapError" class="boot-screen" data-focus-scope><div class="boot-content"><img class="boot-mark" :src="iconUrl" alt="" width="130" height="130" /><h1>Нет соединения</h1><p role="alert">{{ bootstrapError }}</p><button class="primary" @click="initialize">Повторить соединение</button></div></main>
-  <div v-else class="app-shell" :inert="playerOpen || modal !== null || undefined">
+  <div v-else class="app-shell" :inert="playerOpen || trailerOpen || modal !== null || undefined">
     <aside class="sidebar"><div class="wordmark"><span class="brand-mark">r</span><span>rezka<span class="brand-light">client</span></span></div><nav aria-label="Главное меню">
       <button data-nav-id="nav-home" :class="{ active: route.name === 'home' }" @click="navigate({ name: 'home', title: 'Главная' })"><AppIcon name="home" />Главная</button>
       <button data-nav-id="nav-search" :class="{ active: route.name === 'search' }" @click="navigate({ name: 'search', title: 'Поиск' })"><AppIcon name="search" />Поиск</button>
@@ -644,7 +720,7 @@ onBeforeUnmount(() => {
       <button class="profile-entry" data-nav-id="nav-profile" :class="{ active: route.name === 'profile' }" :aria-label="status?.account ? `Профиль аккаунта ${accountName}` : 'Профиль, войти в аккаунт'" @click="navigate({ name: 'profile', title: 'Профиль' })"><span class="avatar" aria-hidden="true">{{ status?.account ? accountName.slice(0, 1).toUpperCase() : '○' }}</span><span class="profile-summary"><strong>Профиль</strong><small>{{ status?.account ? accountName : 'Войти в аккаунт' }}</small></span></button>
       <button v-if="status?.account && sync.status === 'failed'" class="save-retry-icon" aria-label="Проверить сохранение просмотра" title="Проверить сохранение просмотра" @click="openModal('unsent')"><AppIcon name="refresh" /></button><button v-else-if="status?.account && episodeSyncError" class="save-retry-icon" aria-label="Повторить передачу серии" title="Повторить передачу серии" :disabled="sync.count > 0" @click="retryEpisodeSync"><AppIcon name="refresh" /></button>
     </div></div></aside>
-    <main ref="scroller" class="content-area" @scroll.passive="maybeLoadMore"><header v-if="route.name !== 'home' && route.name !== 'details'" class="page-header"><h1>{{ route.title }}</h1></header><h1 v-else-if="route.name === 'home'" class="sr-only">Что посмотрим сегодня?</h1>
+    <main ref="scroller" class="content-area" @scroll.passive="maybeLoadMore"><header v-if="route.name !== 'home' && route.name !== 'details' && route.name !== 'person'" class="page-header"><h1>{{ route.title }}</h1></header><h1 v-else-if="route.name === 'home'" class="sr-only">Что посмотрим сегодня?</h1>
       <div v-if="visibleWarnings.length" class="warning-strip" role="status">{{ visibleWarnings.join(' · ') }}</div>
       <div v-if="watchedPending.size || watchedNote || watchedError" class="sync-notice" :class="{ failed: !!watchedError }" role="status"><span>{{ watchedError || (watchedPending.size ? 'Обновляем отметки просмотренных серий…' : watchedNote) }}</span><button v-if="watchedError" @click="retryWatched">Повторить отметки</button><button v-else-if="!watchedPending.size" @click="watchedNote = ''" aria-label="Закрыть уведомление о просмотренных сериях">×</button></div>
       <template v-if="route.name === 'home'"><section v-for="shelf in visibleShelves" :key="shelf.id" class="shelf"><div class="section-heading"><div><h2>{{ shelf.title }}</h2><p>{{ shelf.subtitle }}</p></div></div><SkeletonView v-if="shelf.loading && !shelf.items.length" kind="shelves" /><div v-if="shelf.error" class="empty-state compact" role="alert"><p>{{ shelf.error }}</p><button @click="loadShelf(shelf)">Повторить</button></div><div v-else-if="!shelf.loading && !shelf.items.length" class="empty-state compact"><span aria-hidden="true">{{ shelf.id === 'continue' ? '▷' : '＋' }}</span><div><h3>{{ shelf.id === 'continue' ? 'История начинается с первого фильма' : shelf.id === 'bookmarks' ? 'Ваши будущие любимые фильмы' : 'Пока ничего нет' }}</h3><p>{{ shelf.id === 'continue' ? 'Доступные записи из аккаунта появятся здесь.' : shelf.id === 'bookmarks' ? 'Добавляйте фильмы и сериалы в списки из карточки.' : 'Попробуйте обновить раздел немного позже.' }}</p></div></div><div v-if="shelf.items.length" class="poster-row"><PosterCard v-for="item in shelf.items" :key="item.id" :item="item" :context="shelf.id" @select="openContent" /></div></section></template>
@@ -666,11 +742,13 @@ onBeforeUnmount(() => {
                 <ul v-if="detailRatings.length" class="detail-ratings" aria-label="Рейтинги"><li v-for="rating in detailRatings" :key="rating.source"><span>{{ rating.source }}</span><strong>{{ rating.score }}</strong><small v-if="rating.votes?.trim()">{{ rating.votes }} голосов</small></li></ul>
               </div>
               <dl v-if="detailFacts.length" class="detail-facts"><div v-for="fact in detailFacts" :key="fact.label"><dt>{{ fact.label }}</dt><dd>{{ fact.value }}</dd></div></dl>
+              <ul v-if="details.rankings?.length" class="detail-rankings" aria-label="Места в подборках"><li v-for="ranking in details.rankings" :key="`${ranking.name}:${ranking.place || ''}`"><strong v-if="ranking.place">№ {{ ranking.place }}</strong><span>{{ ranking.name }}</span></li></ul>
               <div class="detail-synopsis"><p :class="{ expanded: descriptionExpanded }">{{ details.description || 'Источник не предоставил описание.' }}</p><button v-if="details.description.length > 280" class="quiet" :aria-expanded="descriptionExpanded" @click="descriptionExpanded = !descriptionExpanded">{{ descriptionExpanded ? 'Свернуть описание' : 'Полное описание' }}</button></div>
               <ul v-if="detailGenres.length" class="detail-genres" aria-label="Жанры"><li v-for="genre in detailGenres" :key="genre">{{ genre }}</li></ul>
               <div class="detail-actions">
                 <button class="primary" data-nav-id="detail-play" data-autofocus :disabled="loading || playStarting || !selectionKey" @click="play" @keydown.down="focusVoiceover"><AppIcon name="play" />{{ playStarting ? 'Готовим видео' : `Смотреть${chosenEpisode ? ` · ${chosenEpisode.episode} серия` : ''}` }}</button>
                 <button v-if="status?.account" data-nav-id="detail-bookmark" :class="{ bookmarked: detailBookmarked === true }" :aria-pressed="detailBookmarked === undefined ? undefined : detailBookmarked" @click="openModal('bookmark')"><AppIcon name="bookmark" />{{ detailBookmarked === true ? 'В закладках' : detailBookmarked === false ? 'В закладки' : 'Закладки' }}</button>
+                <button v-if="details.trailerAvailable" data-nav-id="detail-trailer" :disabled="trailerLoading || playStarting" @click="openTrailer"><AppIcon name="play" />Трейлер</button>
               </div>
               <div class="detail-selectors">
                 <TvSelect label="Озвучка" :model-value="translator" :disabled="loading || playStarting || !details.translators.length" :options="details.translators.map(item => ({ value: item.id, label: item.name }))" @update:model-value="translator = String($event)" @change="changeTranslator" @keydown.up="focusWatch" />
@@ -681,8 +759,26 @@ onBeforeUnmount(() => {
           </div>
           <section v-if="details.type === 'series' && seasons.length" class="detail-episodes" aria-label="Выбор серии">
             <div class="detail-episodes-heading"><h2>Серии</h2><TvSelect label="Сезон" :model-value="selectedSeason" :disabled="loading || playStarting" :options="seasons.map(item => ({ value: item, label: `Сезон ${item}` }))" @update:model-value="selectedSeason = Number($event)" @change="changeSeason" /><span class="detail-episode-count">{{ episodes.length }}</span></div>
-            <div class="episode-grid"><button v-for="item in episodes" :key="item.episode" :data-nav-id="`episode-${item.season}-${item.episode}`" :class="{ selected: selectedEpisode === item.episode }" :aria-label="`Серия ${item.episode}${item.watched ? ', просмотрено' : ''}`" :aria-pressed="selectedEpisode === item.episode" :disabled="loading || playStarting" @click="selectedEpisode = item.episode"><span class="episode-number">{{ String(item.episode).padStart(2, '0') }}</span><span class="episode-name">{{ item.title || `Серия ${item.episode}` }}</span><span v-if="item.watched" class="episode-watched">Просмотрено</span></button></div>
+            <div class="episode-grid"><button v-for="item in episodes" :key="item.episode" :data-nav-id="`episode-${item.season}-${item.episode}`" :class="{ selected: selectedEpisode === item.episode }" :aria-label="`Серия ${item.episode}${item.watched ? ', просмотрено' : ''}`" :aria-pressed="selectedEpisode === item.episode" :disabled="loading || playStarting" @click="selectedEpisode = item.episode" @keydown.down="focusSchedule"><span class="episode-number">{{ String(item.episode).padStart(2, '0') }}</span><span class="episode-name">{{ item.title || `Серия ${item.episode}` }}</span><span v-if="item.watched" class="episode-watched">Просмотрено</span></button></div>
           </section>
+          <section v-if="details.type === 'series' && scheduleEpisodes.length" class="detail-schedule" role="region" aria-label="Расписание выхода серий">
+            <div class="detail-extra-heading"><div><p class="eyebrow">ГРАФИК HDREZKA</p><h2>Расписание выхода серий</h2></div><TvSelect v-if="scheduleSeasons.length > 1" label="Сезон расписания" :model-value="selectedScheduleSeason || scheduleSeasons[0] || 1" :options="scheduleSeasons.map(item => ({ value: item, label: `Сезон ${item}` }))" @update:model-value="selectedScheduleSeason = Number($event)" /></div>
+            <div class="schedule-list" role="table" aria-label="Серии и даты выхода"><div v-for="item in scheduleEpisodes" :key="`${item.season}:${item.episode}`" class="schedule-row" :class="{ current: item.current, upcoming: item.state === 'upcoming' }" role="row"><span class="schedule-number" role="cell"><b>{{ String(item.episode).padStart(2, '0') }}</b><small>{{ item.season }} сезон</small></span><span class="schedule-title" role="cell"><strong>{{ item.title || `Серия ${item.episode}` }}</strong><small v-if="item.originalTitle">{{ item.originalTitle }}</small></span><span class="schedule-date" role="cell">{{ item.airDate || 'Дата уточняется' }}</span><span class="schedule-state" :class="item.state" role="cell">{{ item.state === 'aired' ? 'Вышла' : item.relative || 'Ожидается' }}</span></div></div>
+          </section>
+          <section v-if="details.parts?.length" class="shelf detail-parts" role="region" :aria-label="details.franchiseTitle || 'Все части'">
+            <div class="section-heading"><h2>{{ details.franchiseTitle || 'Все части' }}</h2></div>
+            <div class="poster-row part-row"><button v-for="item in details.parts" :key="`${item.id}:${item.order}`" class="poster-card part-card" :class="{ current: item.current }" :data-nav-id="item.current ? undefined : `part-${item.id}`" :disabled="item.current" :aria-label="`${item.order}. ${item.title}${item.year ? `, ${item.year}` : ''}${item.rating ? `, рейтинг ${item.rating}` : ''}${item.current ? ', текущая часть' : ''}`" @click="openContent(item)"><span class="part-order">{{ String(item.order).padStart(2, '0') }}</span><span class="part-copy"><strong>{{ item.title }}</strong><small>{{ [item.year, item.rating && `КП ${item.rating}`].filter(Boolean).join(' · ') }}</small></span><span v-if="item.current" class="part-current">Сейчас</span></button></div>
+          </section>
+          <section v-if="details.directors?.length" class="shelf detail-people" role="region" aria-label="Режиссёры"><div class="section-heading"><h2>Режиссёры</h2></div><div class="poster-row people-row"><button v-for="item in details.directors" :key="item.id" class="poster-card person-card" :data-nav-id="`person-director-${item.id}`" :aria-label="item.name" @click="openPerson(item)"><span class="poster-image"><img v-if="item.photo" :src="item.photo" alt="" width="300" height="450" loading="lazy" decoding="async" @error="($event.target as HTMLImageElement).style.display = 'none'" /><span class="poster-fallback" aria-hidden="true">{{ item.name.slice(0, 1) }}</span></span><span class="poster-title">{{ item.name }}</span><span class="poster-meta">Режиссёр</span></button></div></section>
+          <section v-if="details.actors?.length" class="shelf detail-people" role="region" aria-label="В ролях"><div class="section-heading"><h2>В ролях</h2></div><div class="poster-row people-row"><button v-for="item in details.actors" :key="item.id" class="poster-card person-card" :data-nav-id="`person-actor-${item.id}`" :aria-label="item.name" @click="openPerson(item)"><span class="poster-image"><img v-if="item.photo" :src="item.photo" alt="" width="300" height="450" loading="lazy" decoding="async" @error="($event.target as HTMLImageElement).style.display = 'none'" /><span class="poster-fallback" aria-hidden="true">{{ item.name.slice(0, 1) }}</span></span><span class="poster-title">{{ item.name }}</span><span class="poster-meta">Актёр</span></button></div></section>
+        </article>
+      </template>
+      <template v-else-if="route.name === 'person'">
+        <SkeletonView v-if="loading && !person" kind="details" />
+        <div v-if="screenError" class="error-box" role="alert"><p>{{ screenError }}</p><button @click="loadPerson(beginRequest())">Повторить</button></div>
+        <article v-if="person" class="person-detail" :aria-busy="loading">
+          <div class="person-hero"><div class="person-photo"><img v-if="person.photo" :src="person.photo" :alt="person.name" width="360" height="480" @error="($event.target as HTMLImageElement).style.display = 'none'" /><span aria-hidden="true">{{ person.name.slice(0, 1) }}</span></div><div class="person-info"><p class="eyebrow">ФИЛЬМОГРАФИЯ</p><h1>{{ person.name }}</h1><p v-if="person.originalName && person.originalName !== person.name" class="detail-original-title">{{ person.originalName }}</p><dl v-if="person.facts?.length" class="person-facts"><div v-for="fact in person.facts" :key="fact.label"><dt>{{ fact.label }}</dt><dd>{{ fact.value }}</dd></div></dl></div></div>
+          <section v-for="career in person.careers" :key="career.role" class="shelf person-career" role="region" :aria-label="career.role"><div class="section-heading"><div><h2>{{ career.role }}</h2><p v-if="career.summary">{{ career.summary }}</p></div><span v-if="career.summary" class="career-summary">{{ career.summary }}</span></div><div class="poster-row"><PosterCard v-for="item in career.items" :key="item.id" :item="item" :context="`career-${person.id}-${career.role}`" @select="openContent" /></div></section>
         </article>
       </template>
       <template v-else-if="route.name === 'profile'">
@@ -700,6 +796,7 @@ onBeforeUnmount(() => {
       </template>
     </main>
   </div>
+  <div v-if="trailerOpen" class="modal-backdrop trailer-backdrop" data-focus-scope><section class="trailer-dialog" role="dialog" aria-modal="true" :aria-label="`Трейлер · ${details?.title || route.title}`"><header><div><p class="eyebrow">ТРЕЙЛЕР</p><h2>{{ `Трейлер · ${details?.title || route.title}` }}</h2></div><button data-autofocus data-nav-id="trailer-close" type="button" aria-label="Закрыть трейлер" @click="closeTrailer"><AppIcon name="close" /></button></header><div class="trailer-frame"><iframe v-if="trailerUrl && trailerStarted" :src="trailerUrl" :title="`Трейлер ${details?.title || route.title}`" tabindex="-1" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen /><div v-else-if="trailerUrl" class="trailer-ready"><button data-nav-id="trailer-start" class="primary" type="button" @click="startTrailer"><AppIcon name="play" />Воспроизвести трейлер</button></div><div v-else-if="trailerLoading" class="trailer-loading" role="status"><span class="skeleton-block" /><p>Загружаем трейлер</p></div><div v-else class="trailer-error" role="alert"><p>{{ trailerError || 'Трейлер сейчас недоступен.' }}</p></div></div></section></div>
   <div v-if="modal" class="modal-backdrop" data-focus-scope><section class="dialog" role="dialog" aria-modal="true" aria-labelledby="modal-title"><template v-if="modal === 'bookmark'"><p class="eyebrow">СПИСКИ АККАУНТА</p><h2 id="modal-title">Мои закладки</h2><TvSelect label="Выберите список" :model-value="selectedList" :disabled="modalBusy" :options="lists.map(list => ({ value: list.id, label: list.name }))" @update:model-value="selectedList = String($event)" /><p v-if="listsError" class="error-text">{{ listsError }}</p><p v-if="!lists.length && !listsError" class="muted">Сервер не вернул доступных списков.</p><div class="actions"><button class="primary" :disabled="modalBusy || !selectedList" @click="setBookmark(true)">Добавить</button><button :disabled="modalBusy || !selectedList" @click="setBookmark(false)">Удалить из списка</button><button :disabled="modalBusy" @click="closeModal">Закрыть</button></div></template><template v-else-if="modal === 'logout'"><h2 id="modal-title">Выйти из аккаунта?</h2><p class="muted">Закладки и история просмотра будут доступны после входа.</p><div class="actions"><button class="primary" :disabled="modalBusy" @click="closeModal">Остаться</button><button :disabled="modalBusy" @click="logout">Выйти</button></div></template><template v-else><p class="eyebrow">НЕСОХРАНЁННЫЙ ПРОГРЕСС</p><h2 id="modal-title">Выберите актуальную позицию</h2><p>На устройстве осталось записей: {{ sync.count }}. Они ещё не записаны в локальное хранилище.</p><p class="muted">Повторная отправка также обновит выбранную серию в HDRezka. Если после этого вы смотрели на другом устройстве, оставьте его более свежую серию и удалите эту очередь.</p><p v-if="sync.error" class="error-text">{{ sync.error }}</p><div class="actions"><button class="primary" @click="retrySaves(); closeModal()">Повторить сохранение</button><button @click="discardSaves">Удалить только очередь</button><button @click="closeModal">Решить позже</button></div></template><p v-if="modalError" class="error-text" role="alert">{{ modalError }}</p><p v-if="modalBusy" role="status">Выполняем запрос…</p></section></div>
   <VideoPlayer v-if="playerOpen && details" ref="playerRef" :details="details" :translator-id="translator" :episode="chosenEpisode" :prepared-source="playbackSource" :preferences="preferences" :sync-status="sync.status" :sync-error="sync.error" :episode-sync-error="episodeSyncError" :episode-retry-blocked="sync.count > 0" :pending-positions="pendingPositions" :progress-supported="!!status?.account && status.capabilities.progress === true" :watched-supported="!!status?.account && status.capabilities.watched === true" :watched-busy="watchedPending.size > 0" :watched-error="watchedError" :watched-note="watchedNote" @close="closePlayer" @selection="updatePlaybackSelection" @save="saveProgress" @preferences="updatePreferences" @retry-save="retrySaves" @retry-episode-sync="retryEpisodeSync" @watched="setEpisodeWatched" @retry-watched="retryWatched" />
 </template>

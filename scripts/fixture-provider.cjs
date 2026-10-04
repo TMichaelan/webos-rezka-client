@@ -12,6 +12,21 @@ function createFixtureProvider() {
     '200': { year: '2026', originalTitle: 'Test Movie', releaseDate: '10 мая 2026 года', countries: ['Франция'], ageRating: '18+', genres: ['Триллер'], duration: '124 мин', ratings: [{ source: 'IMDb', score: '7.9', votes: '9 876' }, { source: 'World Art', score: '8.1', votes: '55' }, { source: 'HDRezka', score: '8.0', votes: '301' }] },
     '400': { year: '2022', originalTitle: 'New Series', releaseDate: '3 марта 2022 года', countries: ['Канада'], ageRating: '12+', genres: ['Приключения'], duration: '50 мин', ratings: [{ source: 'IMDb', score: '7.5' }] },
   };
+  const director = { id: '1', name: 'Тестовый режиссёр', url: 'https://hdrezka-home.tv/person/1-test-director/' };
+  const actor = { id: '2', name: 'Тестовый актёр', url: 'https://hdrezka-home.tv/person/2-test-actor/' };
+  const people = new Map([
+    [director.url, { ...director, originalName: 'Test Director', facts: [{ label: 'Карьера', value: 'Режиссёр, продюсер' }], careers: [{ role: 'Режиссёр', summary: '2 проекта', items: [items[0], items[1]] }] }],
+    [actor.url, { ...actor, originalName: 'Test Actor', facts: [{ label: 'Дата рождения', value: '1 января 1980' }], careers: [{ role: 'Актёр', summary: '3 проекта', items: [items[0], items[1], items[2]] }] }],
+  ]);
+  const extras = {
+    '100': {
+      rankings: [{ name: 'Лучшие тестовые сериалы', place: 1 }], trailerAvailable: true, directors: [director], actors: [actor], franchiseTitle: 'Все части тестовой истории',
+      parts: [{ ...items[0], order: 1, current: true, year: '2024', rating: '8.4' }, { ...items[3], order: 2, year: '2026', rating: '7.5' }],
+      schedule: [{ season: 1, episode: 1, title: 'Начало', originalTitle: 'The Beginning', airDate: '1 октября 2026', state: 'aired', current: true }, { season: 1, episode: 2, title: 'Продолжение', originalTitle: 'The Next Chapter', airDate: '8 октября 2026', relative: 'через 4 дня', state: 'upcoming' }],
+    },
+    '200': { rankings: [{ name: 'Лучшие тестовые фильмы', place: 2 }], trailerAvailable: true, directors: [director], actors: [actor], franchiseTitle: 'Все части тестового фильма', parts: [{ ...items[1], order: 1, current: true, year: '2026', rating: '7.9' }, { ...items[2], order: 2, year: '2027' }] },
+    '400': { rankings: [{ name: 'Ожидаемые сериалы', place: 3 }], trailerAvailable: true, directors: [director], actors: [actor], schedule: [{ season: 2, episode: 1, title: 'Новый сезон', originalTitle: 'A New Season', airDate: 'январь 2027', relative: 'через 2 месяца', state: 'upcoming' }] },
+  };
   const state = {};
   const localKey = value => [state.account?.id || 'fixture-user', value.id, value.translatorId || '', value.season || '', value.episode ?? ''].join(':');
   function reset() {
@@ -39,7 +54,17 @@ function createFixtureProvider() {
         return page(params.query === 'slow' ? [items[0]] : items.filter(item => item.title.toLowerCase().includes(params.query.toLowerCase())));
       case 'details': {
         const item = items.find(item => item.url === params.url) || items[0];
-        return { ...item, description: 'Локальные тестовые данные для проверки навигации, плеера и синхронизации. Это не реальный каталог HDRezka.', translators: [{ id: '1', name: 'Тестовая озвучка' }, { id: '2', name: 'Оригинал' }], episodes: item.type === 'series' ? [1, 2, 3].map(episode => ({ season: 1, episode, title: `Эпизод ${episode}`, watched: !!state.account && !!state.watched[`${item.id}:1:${episode}`] })) : [], year: '2026', genres: ['Тест'], duration: '2 мин', ...facts[item.id], selectedTranslatorId: '1' };
+        return { ...item, description: 'Локальные тестовые данные для проверки навигации, плеера и синхронизации. Это не реальный каталог HDRezka.', translators: [{ id: '1', name: 'Тестовая озвучка' }, { id: '2', name: 'Оригинал' }], episodes: item.type === 'series' ? [1, 2, 3].map(episode => ({ season: 1, episode, title: `Эпизод ${episode}`, watched: !!state.account && !!state.watched[`${item.id}:1:${episode}`] })) : [], year: '2026', genres: ['Тест'], duration: '2 мин', ...facts[item.id], ...extras[item.id], selectedTranslatorId: '1' };
+      }
+      case 'person': {
+        const value = people.get(params.url);
+        if (!value) throw Object.assign(new Error('Unknown fixture person'), { code: 'INVALID_INPUT' });
+        return value;
+      }
+      case 'trailer': {
+        const item = items.find(item => item.id === params.id && item.url === params.url);
+        if (!item || !extras[item.id]?.trailerAvailable) throw Object.assign(new Error('Unknown fixture trailer'), { code: 'INVALID_INPUT' });
+        return { url: 'https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=1' };
       }
       case 'streams':
         return { translatorId: params.translatorId, season: params.season, episode: params.episode, variants: [{ id: '360p', label: '360p · тест', height: 360, mime: 'video/mp4', url: '/api/test-video' }, { id: '720p', label: '720p · тест', height: 720, mime: 'video/mp4', url: '/api/test-video?quality=720' }], subtitles: [{ id: 'ru', label: 'Русские', language: 'ru', url: 'https://subtitle.example.test/ru.vtt', format: 'vtt' }, { id: 'en', label: 'English', language: 'en', url: 'https://subtitle.example.test/en.vtt', format: 'vtt' }] };

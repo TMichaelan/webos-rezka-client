@@ -5,7 +5,13 @@ export interface Page<T = Content> { items: T[]; page: number; hasMore: boolean 
 export interface Translator { id: string; name: string }
 export interface Episode { season: number; episode: number; title?: string; watched?: boolean }
 export interface Rating { source: 'IMDb' | 'Кинопоиск' | 'World Art' | 'HDRezka'; score: string; votes?: string }
-export interface Details extends Content { description: string; translators: Translator[]; episodes: Episode[]; year?: string; genres?: string[]; duration?: string; originalTitle?: string; releaseDate?: string; countries?: string[]; ageRating?: string; ratings?: Rating[]; selectedTranslatorId?: string }
+export interface PersonSummary { id: string; name: string; url: string; photo?: string }
+export interface ScheduleEpisode { season: number; episode: number; title?: string; originalTitle?: string; airDate?: string; relative?: string; state: 'aired' | 'upcoming'; current?: boolean; watched?: boolean }
+export interface FranchisePart extends Content { order: number; current?: boolean; year?: string; rating?: string }
+export interface Ranking { name: string; place?: number; url?: string }
+export interface FilmographyGroup { role: string; summary?: string; items: Content[] }
+export interface PersonDetails { id: string; name: string; originalName?: string; url: string; photo?: string; facts?: { label: string; value: string }[]; careers: FilmographyGroup[] }
+export interface Details extends Content { description: string; translators: Translator[]; episodes: Episode[]; year?: string; genres?: string[]; duration?: string; originalTitle?: string; releaseDate?: string; countries?: string[]; ageRating?: string; ratings?: Rating[]; selectedTranslatorId?: string; directors?: PersonSummary[]; actors?: PersonSummary[]; schedule?: ScheduleEpisode[]; franchiseTitle?: string; parts?: FranchisePart[]; rankings?: Ranking[]; trailerAvailable?: boolean }
 export interface StreamVariant { id: string; label: string; url: string; height?: number; mime?: string; hdr?: string; audio?: string }
 export interface Subtitle { id: string; label: string; language?: string; url: string; format?: string }
 export interface PlaybackSource { variants: StreamVariant[]; subtitles: Subtitle[]; translatorId: string; season?: number; episode?: number }
@@ -24,6 +30,8 @@ export interface Methods {
   catalog: { params: { category?: string; sort?: 'new' | 'popular'; page?: number }; result: Page }
   search: { params: { query: string; page?: number }; result: Page }
   details: { params: { url: string; translatorId?: string }; result: Details }
+  person: { params: { url: string }; result: PersonDetails }
+  trailer: { params: { id: string; url: string }; result: { url: string } }
   streams: { params: { id: string; url: string; translatorId: string; season?: number; episode?: number }; result: PlaybackSource }
   subtitle: { params: { url: string }; result: { text: string } }
   bookmarkLists: { params: Record<string, never>; result: BookmarkList[] }
